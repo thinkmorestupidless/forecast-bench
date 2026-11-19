@@ -68,7 +68,7 @@ object BenchService:
       settings,
       venues = Map.empty,
       Models.fromSettings(settings),
-      forecastbench.gather.NoSearch
+      forecastbench.gather.Exa.fromEnv(settings.limits.excerpt)
     )
   )
   val timers  = TimerRuntime()

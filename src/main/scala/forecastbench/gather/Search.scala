@@ -33,9 +33,3 @@ object Search:
       .flatMap(Option(_))
       .map(_.stripPrefix("www."))
       .getOrElse(address)
-
-/** No search: every gather fails, saying so. What the bench has until a real search is named. */
-object NoSearch extends Search:
-  val name = "none"
-  def search(query: String, publishedBefore: Option[Instant], limit: Int) =
-    Left(SearchFailed(name, "the bench has no search"))
