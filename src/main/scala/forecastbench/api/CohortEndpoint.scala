@@ -191,6 +191,24 @@ final class CohortEndpoint(client: ComponentClient, views: ViewClient)
 
   get("/{id}")((id: String) => read(id))
 
+  /**
+   * A question's pack in the cohort; 404 when it has none, saying why when its gathering failed.
+   */
+  get("/{id}/packs/{question}") { (id: String, question: String) =>
+    val held = read(id)
+    client
+      .forEventSourcedEntity(EntityId(Ids.pack(id, question)))
+      .call(PackEntity.get)
+      .invoke()
+      .pack
+      .getOrElse {
+        val why = held.packs.get(question) match
+          case Some(n) if n.reason.isDefined => s"the pack was not gathered: ${n.reason.get}"
+          case _                             => "the pack is not gathered yet"
+        Refusals.notFound(s"no pack for '$question' in '$id': $why")
+      }
+  }
+
   private val reports = Reports(client, views)
 
   get("/{id}/report") { (id: String) =>
@@ -366,5 +384,6 @@ object CohortEndpoint:
   given JsonValueCodec[Cohort]           = Codecs.make
   given JsonValueCodec[Forecasting]      = Codecs.make
   given JsonValueCodec[Scored]           = Codecs.make
+  given JsonValueCodec[Pack]             = Codecs.make
   export ReportEndpoint.given
   given JsonValueCodec[List[Happened]] = Codecs.make
