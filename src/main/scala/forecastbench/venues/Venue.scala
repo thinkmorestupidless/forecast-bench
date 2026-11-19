@@ -1,6 +1,6 @@
 package forecastbench.venues
 
-import forecastbench.domain.OutcomeValue
+import forecastbench.domain.{OutcomeValue, VenueReading}
 
 import java.time.Instant
 
@@ -20,16 +20,6 @@ final case class VenueFilter(
     closesBefore: Option[Instant] = None,
     leastVolume: Option[BigDecimal] = None,
     limit: Int = 500
-)
-
-/** The venue's probability and how it was read: the rule (`mid` or `last`) and what it read. */
-final case class VenueReading(
-    probability: Double,
-    rule: String,
-    bid: Option[Double],
-    ask: Option[Double],
-    last: Option[Double],
-    observedAt: Instant
 )
 
 final case class VenueQuestion(

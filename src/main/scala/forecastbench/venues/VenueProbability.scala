@@ -1,5 +1,7 @@
 package forecastbench.venues
 
+import forecastbench.domain.VenueReading
+
 import java.time.Instant
 
 /**
