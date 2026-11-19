@@ -138,6 +138,34 @@ final class CohortEndpoint(client: ComponentClient, views: ViewClient)
       Respond(Forecasting.started(1, plans.map(_.runs.size).sum), 202)
   }
 
+  post("/{id}/retry-failed") { (id: String) =>
+    val held    = read(id)
+    val runs    = Runs.of(views, Some(id), None, None).map(_.run).toList
+    val made    = runs.map(r => RunKey(r.question, r.arm, r.repetition)).distinct
+    val started = cohort(id).call(CohortEntity.startForecast).invoke(Start(made, now))
+    if !started.started then Respond(Forecasting.refused(Cohort.WindowEnded, started.notMade), 409)
+    else
+      val again = CohortEndpoint.toRetry(runs)
+      if again.isEmpty then Respond(Forecasting.started(0, 0), 202)
+      else
+        val round = Iterator
+          .from(2)
+          .find(n =>
+            client
+              .forWorkflow(EntityId(CohortForecast.id(id, n)))
+              .call(CohortForecast.get)
+              .invoke()
+              .round == 0
+          )
+          .get
+        val plans = CohortEndpoint.plans(held, again)
+        client
+          .forWorkflow(EntityId(CohortForecast.id(id, round)))
+          .call(CohortForecast.start)
+          .invoke(Round(id, round, plans)): Unit
+        Respond(Forecasting.started(round, again.size), 202)
+  }
+
   get("/{id}")((id: String) => read(id))
 
   private def read(id: String): Cohort =
@@ -184,6 +212,20 @@ object CohortEndpoint:
         None
       )
     }
+
+  /**
+   * The runs to make again: for each question, arm and repetition whose runs are all failed, the
+   * next attempt. One with a forecast, or one that abstained, is never made again (FR-015).
+   */
+  def toRetry(runs: List[RunRecorded]): List[(String, String, Int, Int)] =
+    runs
+      .groupBy(r => (r.question, r.arm, r.repetition))
+      .toList
+      .collect {
+        case ((q, a, rep), rs) if rs.forall(_.ending.isInstanceOf[Ending.Failed]) =>
+          (q, a, rep, rs.map(_.attempt).max + 1)
+      }
+      .sorted
 
   /**
    * A round of forecasting started and how many runs it is to make; or a refusal, as every refusal
