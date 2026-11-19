@@ -32,14 +32,17 @@ object BenchService:
     RunEntity.descriptor,
     Runs.descriptor,
     QuestionForecast.descriptor,
-    CohortForecast.descriptor
+    CohortForecast.descriptor,
+    WatchedEntity.descriptor,
+    ReadOutcomes.descriptor
   )
 
   def endpoints: Seq[EndpointClients => HttpEndpoint] = Seq(
     clients => VenueEndpoint(clients.componentClient),
     clients => QuestionEndpoint(clients.componentClient, clients.viewClient),
     clients => CohortEndpoint(clients.componentClient, clients.viewClient),
-    clients => RunEndpoint(clients.componentClient, clients.viewClient, clients.storage)
+    clients => RunEndpoint(clients.componentClient, clients.viewClient, clients.storage),
+    clients => OutcomeEndpoint(clients.componentClient)
   )
 
   /** The extensions of a service, in the order they start. */
@@ -59,6 +62,12 @@ object BenchService:
     .extensions(timers, HttpServer.of(BenchService.endpoints*))
     .foldLeft(builder)(_.withExtension(_))
     .start()
+  timers.timerScheduler.createRecurringTimer(
+    ReadOutcomes.TimerName,
+    settings.outcomesEvery,
+    settings.outcomesEvery,
+    ReadOutcomes.read.deferred("all")
+  )
 
   sys.addShutdownHook(service.terminate())
   scala.concurrent.Await

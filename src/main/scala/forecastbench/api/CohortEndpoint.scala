@@ -102,11 +102,16 @@ final class CohortEndpoint(client: ComponentClient, views: ViewClient)
         .question
         .map(q -> _.closesAt)
     }.toMap
-    Refusals.invalidAs422(
+    val frozen = Refusals.invalidAs422(
       cohort(id)
         .call(CohortEntity.freeze)
         .invoke(Freeze(fixed, GathererVersion, ScoringMethod, closes, now))
     )
+    client
+      .forKeyValueEntity(EntityId(WatchedEntity.Id))
+      .call(WatchedEntity.watch)
+      .invoke(frozen.questions): Unit
+    frozen
   }
 
   post("/{id}/forecast") { (id: String) =>
