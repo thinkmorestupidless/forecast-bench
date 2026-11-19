@@ -27,3 +27,55 @@ final case class Pack(
     cost: BigDecimal
 ):
   def empty: Boolean = documents.isEmpty
+
+/** The one event of a pack. */
+final case class PackGathered(pack: Pack)
+
+/** A search result as the merge reads it: what the port gave, without the port's type. */
+final case class Found(
+    address: String,
+    title: String,
+    source: String,
+    publishedAt: Option[Instant],
+    text: String
+)
+
+object Pack:
+
+  /** The host suffixes of the venues' own pages, which show the venue's probability. */
+  val VenueHosts: Set[String] = Set("kalshi.com", "polymarket.com")
+
+  private def host(address: String): String =
+    scala.util
+      .Try(java.net.URI.create(address).getHost)
+      .toOption
+      .flatMap(Option(_))
+      .getOrElse("")
+      .toLowerCase
+
+  def isVenuePage(address: String): Boolean =
+    val h = host(address)
+    VenueHosts.exists(v => h == v || h.endsWith("." + v))
+
+  /**
+   * The merge of gatherer version 1 (research R12): the searches' results interleaved by rank, one
+   * address once, the venues' own pages left out, and for a pretended time only documents published
+   * before it; cut to `documents`, each excerpt cut to `excerpt` characters.
+   */
+  def merge(
+      searches: List[List[Found]],
+      documents: Int,
+      excerpt: Int,
+      pretended: Option[Instant]
+  ): List[Document] =
+    val deepest = searches.map(_.size).maxOption.getOrElse(0)
+    val ranked  = (0 until deepest).toList.flatMap(rank => searches.flatMap(_.lift(rank)))
+    val kept = ranked
+      .filterNot(f => isVenuePage(f.address))
+      .filter(f => pretended.forall(t => f.publishedAt.exists(_.isBefore(t))))
+    val once = kept.foldLeft(List.empty[Found])((seen, f) =>
+      if seen.exists(_.address == f.address) then seen else seen :+ f
+    )
+    once.take(documents).zipWithIndex.map { (f, i) =>
+      Document(i + 1, f.source, f.address, f.publishedAt, f.text.take(excerpt), f.title)
+    }
