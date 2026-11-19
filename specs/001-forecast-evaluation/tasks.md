@@ -95,7 +95,7 @@ with what it came from and cannot change.
 **Independent Test**: spec.md, User Story 2.
 
 - [X] T033 [P] [US2] `main/report/Scoring.scala`: Brier score, log score with the bound, an arm's forecast for a question as the mean of its repetitions with their spread, scoring method `1` as a value; `test/report/ScoringSuite.scala` with every row of `features/scoring/score.feature`'s examples
-- [ ] T034 [P] [US2] `main/report/Bootstrap.scala`: the 95% percentile bootstrap of a mean, 10,000 resamples, resampling groups, seeded (research R11); `test/report/BootstrapSuite.scala`: the same seed gives the same interval; a constant sample gives a point; coverage on a known distribution within tolerance
+- [X] T034 [P] [US2] `main/report/Bootstrap.scala`: the 95% percentile bootstrap of a mean, 10,000 resamples, resampling groups, seeded (research R11); `test/report/BootstrapSuite.scala`: the same seed gives the same interval; a constant sample gives a point; coverage on a known distribution within tolerance
 - [ ] T035 [P] [US2] `main/report/Wilson.scala` with `test/report/WilsonSuite.scala` against worked values
 - [ ] T036 [US2] `main/application/ReadOutcomes.scala`: the timed action (hourly, scheduled at start) that reads each venue for the questions of frozen cohorts that are waiting or disputed and sends what it reads to the question; `main/api/OutcomeEndpoint.scala`: `POST /outcomes/read`; a venue that cannot be read is named and changes nothing
 - [ ] T037 [US2] `main/application/ScoreOnOutcome.scala`: the consumer on `question` events that scores a question's runs by its cohorts' scoring method, and again on a revised outcome; `POST /cohorts/{id}/score?method=n` in `main/api/CohortEndpoint.scala`
