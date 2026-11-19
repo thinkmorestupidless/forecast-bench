@@ -36,7 +36,9 @@ final case class QuestionForecastState(
     pending: List[RunPlan],
     made: List[String],
     stopped: Option[String],
-    ended: Boolean
+    ended: Boolean,
+    /** How many times the run in hand has waited for its pack or its appraisal. */
+    waited: Int = 0
 )
 
 /**
@@ -50,7 +52,8 @@ final class QuestionForecast(context: WorkflowContext) extends Workflow[Question
 
   private val client = context.componentClient
 
-  def emptyState: QuestionForecastState = QuestionForecastState(None, None, Nil, Nil, None, false)
+  def emptyState: QuestionForecastState =
+    QuestionForecastState(None, None, Nil, Nil, None, false)
 
   override def settings: WorkflowSettings =
     WorkflowSettings.builder
@@ -135,7 +138,8 @@ final class QuestionForecast(context: WorkflowContext) extends Workflow[Question
   /**
    * A model arm's run. An arm that takes evidence waits for its question's pack (FR-018): it pauses
    * until the cohort notes the pack, reads it once it is gathered or empty, and is not made when
-   * the pack failed.
+   * the pack failed. The graph and prose arms then wait the same way for the appraisal, and read
+   * its content back from the graph before they are given it (research R8).
    */
   def modelStep: StepEffect =
     val run = currentState.pending.head
@@ -143,26 +147,77 @@ final class QuestionForecast(context: WorkflowContext) extends Workflow[Question
     val arm = Arms.named(run.arm).get
     tooLate(q) match
       case Some(why)                  => notMade(run, why)
-      case None if !arm.takesEvidence => modelRun(run, q, None)
+      case None if !arm.takesEvidence => modelRun(run, q, None, None)
       case None =>
         val note = cohort.call(CohortEntity.get).invoke().cohort.flatMap(_.packs.get(plan.question))
         note match
-          case None => stepEffects.updateState(currentState).thenPause(PackWait, stepFor(run.arm))
+          case None => waitFor(run, NoPackInTime)
           case Some(n) if n.state == PackNote.Failed("").state =>
             notMade(run, s"the pack was not gathered: ${n.reason.getOrElse("no reason was given")}")
-          case Some(_) => modelRun(run, q, heldPack)
+          case Some(_) =>
+            val pack = heldPack
+            if !Appraised.contains(run.arm) || pack.forall(_.empty) then
+              modelRun(run, q, pack, None)
+            else
+              val appraisal = heldAppraisal
+              appraisal.made match
+                case Some(m) =>
+                  readContent(m, pack.get) match
+                    case Right(content) => modelRun(run, q, pack, Some(m -> content))
+                    case Left(why)      => failedRun(run, why, pack)
+                case None if appraisal.failed.isDefined => modelRun(run, q, pack, None)
+                case None                               => waitFor(run, NoAppraisalInTime)
 
-  private def modelRun(run: RunPlan, q: Question, pack: Option[Pack]): StepEffect =
+  /** Pauses the run in hand to look again; past the bound, it is not made, saying why. */
+  private def waitFor(run: RunPlan, why: String): StepEffect =
+    if currentState.waited >= MaxWaits then notMade(run, why)
+    else
+      stepEffects
+        .updateState(currentState.copy(waited = currentState.waited + 1))
+        .thenPause(PackWait, stepFor(run.arm))
+
+  private def reasoning = forecastbench.reasoning.Reasoning(context.services("reasoning"))
+
+  /** The appraisal's content as the graph holds it, once the graph has caught up with it. */
+  private def readContent(m: AppraisalMade, pack: Pack): Either[String, AppraisalContent] =
+    val r = reasoning
+    for
+      _       <- m.claims.lastOption.fold(Right(()))(c => r.await(c.id))
+      content <- r.content(m.reasoningQuestion, pack, m.openPoints)
+    yield content
+
+  /** A run that failed before its model was called: the reasoning service could not be read. */
+  private def failedRun(run: RunPlan, why: String, pack: Option[Pack]): StepEffect =
+    val recorded = blank(run).copy(
+      ending = Ending.Failed(why),
+      model = Some(plan.model),
+      pack = pack.map(_ => packId),
+      appraisal = Some(appraisalId)
+    )
+    record(recorded)
+    next(made(run, recorded.id))
+
+  private def modelRun(
+      run: RunPlan,
+      q: Question,
+      pack: Option[Pack],
+      appraisal: Option[(AppraisalMade, AppraisalContent)]
+  ): StepEffect =
     val arm = Arms.named(run.arm).get
     val asked =
       QuestionGiven(q.statement, q.criteria, q.closesAt, plan.pretendedTime.getOrElse(now))
     val packRef = pack.map(_ => packId)
-    arm.`given`(asked, pack, None) match
+    val appraisalRef =
+      Option.when(Appraised.contains(run.arm) && pack.exists(!_.empty))(appraisalId)
+    // The appraisal's cost is counted in the cost of each run that reads it (FR-027).
+    val share = appraisal.fold(BigDecimal(0))(_._1.cost)
+    arm.`given`(asked, pack, appraisal.map(_._2)) match
       case Left(Abstain(reason)) =>
         val recorded = blank(run).copy(
           ending = Ending.Abstained(reason),
           model = Some(plan.model),
-          pack = packRef
+          pack = packRef,
+          appraisal = appraisalRef
         )
         record(recorded)
         next(made(run, recorded.id))
@@ -178,7 +233,7 @@ final class QuestionForecast(context: WorkflowContext) extends Workflow[Question
             Reserve(
               RunKey(plan.question, run.arm, run.repetition),
               runId,
-              Estimate.of(models, plan.model, input.text),
+              Estimate.of(models, plan.model, input.text) + share,
               now
             )
           )
@@ -198,16 +253,60 @@ final class QuestionForecast(context: WorkflowContext) extends Workflow[Question
             thinking = entry.map(_.thinking),
             instructions = ref,
             pack = packRef,
+            appraisal = appraisalRef,
             `given` = Some(givenRef),
             answered = answerRef,
             reasons = forecast.reasons,
             usage = Some(forecast.usage),
-            cost = forecast.cost,
+            cost = forecast.cost + share,
+            appraisalShare = share,
             latencyMs = forecast.latencyMs
           )
           record(recorded)
-          cohort.call(CohortEntity.settle).invoke(Settle(runId, forecast.cost, now)): Unit
+          cohort.call(CohortEntity.settle).invoke(Settle(runId, forecast.cost + share, now)): Unit
+          for
+            (m, content) <- appraisal
+            p            <- forecast.ending.forecast
+            if run.arm == Arms.graph.name
+          do believe(runId, run, p, forecast.reasons, m, content)
           next(made(run, runId))
+
+  /**
+   * The graph arm's forecast held as a belief in the yes hypothesis, resting on the reasons it
+   * named that are claims of this appraisal; others are dropped (research R8). A belief that cannot
+   * be written leaves the run as it is: it is tried once more and, failing that, noted on the
+   * cohort.
+   */
+  private def believe(
+      runId: String,
+      run: RunPlan,
+      p: Double,
+      reasons: List[String],
+      m: AppraisalMade,
+      content: AppraisalContent
+  ): Unit =
+    val claims  = content.claims.map(_.id).toSet
+    val restsOn = reasons.distinct.filter(claims).map(r => s"${m.reasoningQuestion}.$r")
+    val dropped = reasons.distinct.count(r => !claims(r))
+    val r       = reasoning
+    def write() = r.belief(
+      forecastbench.reasoning.Reasoning.beliefId(m.reasoningQuestion, run.repetition),
+      forecastbench.reasoning.Reasoning.graphHolder(plan.cohort, run.repetition),
+      forecastbench.reasoning.Reasoning.hypothesis(m.reasoningQuestion),
+      p,
+      restsOn
+    )
+    write().orElse(write()).left.foreach { why =>
+      cohort
+        .call(CohortEntity.note)
+        .invoke(Note(s"the belief of run $runId was not written: $why", now)): Unit
+    }
+    if dropped > 0 then
+      cohort
+        .call(CohortEntity.note)
+        .invoke(
+          Note(s"run $runId named $dropped reasons that are not claims of its appraisal", now)
+        ): Unit
 
   private def packId = Ids.pack(plan.cohort, plan.question)
 
@@ -318,12 +417,14 @@ final class QuestionForecast(context: WorkflowContext) extends Workflow[Question
   /** On to the step of the next run, or to the end. */
   private def next(state: QuestionForecastState): StepEffect =
     val to = state.pending.headOption.fold(QuestionForecast.finish.ref)(r => stepFor(r.arm))
-    stepEffects.updateState(state).thenTransitionTo(to)
+    stepEffects.updateState(state.copy(waited = 0)).thenTransitionTo(to)
 
   /** Each arm's runs are made by a step named for it. */
   private def stepFor(arm: String): com.thinkmorestupidless.ankka.core.effect.StepRef = arm match
     case "venue-price" => QuestionForecast.venuePrice.ref
     case "evidence"    => QuestionForecast.evidence.ref
+    case "graph"       => QuestionForecast.graph.ref
+    case "prose"       => QuestionForecast.prose.ref
     case _             => QuestionForecast.model.ref
 
   private def blank(run: RunPlan): RunRecorded = RunRecorded(
@@ -386,10 +487,19 @@ object QuestionForecast
   val venuePrice             = step("venue-price")(_.venuePriceStep)
   val model                  = step("model-alone")(_.modelStep)
   val evidence               = step("evidence")(_.modelStep)
+  val graph                  = step("graph")(_.modelStep)
+  val prose                  = step("prose")(_.modelStep)
 
   /** How long an arm that takes evidence waits before it looks for its pack again. */
   val PackWait: FiniteDuration = 2.seconds
-  val finish                   = step("finish")(_.finishStep)
+
+  /** How many times a run waits for its pack or its appraisal: ten minutes at `PackWait`. */
+  val MaxWaits = 300
+
+  val NoPackInTime      = "the pack was not gathered in time"
+  val NoAppraisalInTime = "the appraisal was not made in time"
+
+  val finish = step("finish")(_.finishStep)
 
   val start = command("start")(_.start)
   val get   = query("get")(_.get)
