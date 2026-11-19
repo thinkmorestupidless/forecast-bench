@@ -4,12 +4,6 @@ import java.time.Duration
 
 class CohortFeatures extends FeatureSuite("features/cohorts/cohort.feature") with CohortSetup:
 
-  override protected def pending = Set(
-    // T069: development cohorts.
-    "a prospective cohort refuses a development question",
-    "a development cohort refuses a prospective question"
-  )
-
   private def november = world.cohort("november")
 
   Given("a drafted cohort {string} with the model {string}") { (name: String, model: String) =>
@@ -202,4 +196,33 @@ class CohortFeatures extends FeatureSuite("features/cohorts/cohort.feature") wit
     settle(november, List(importedQuestion("late")), List("model-alone"), windowDays = 1)
     freeze(november): Unit
     fixture.clock.advance(Duration.ofDays(2))
+  }
+
+  Given("the cohort {string} is a prospective cohort") { (name: String) =>
+    assertEquals(readCohort(world.cohort(name))("standing").str, "prospective")
+  }
+
+  When("the experimenter adds a development question to the cohort") { () =>
+    val q = importedQuestion("rehearsed", resolved = Some(forecastbench.domain.OutcomeValue.Yes))
+    world.last = post(s"/cohorts/$november/questions", s"""{"questions":["$q"]}""")
+  }
+
+  Given("a drafted development cohort {string}") { (name: String) =>
+    draft(
+      name,
+      standing = "development",
+      pretended = Some(fixture.clock.now.minus(java.time.Duration.ofDays(60)))
+    ): Unit
+  }
+
+  When("the experimenter adds a prospective question to the cohort {string}") { (name: String) =>
+    val q = importedQuestion("open")
+    world.held("refusing") = world.cohort(name)
+    world.last = post(s"/cohorts/${world.cohort(name)}/questions", s"""{"questions":["$q"]}""")
+  }
+
+  Then("the question is refused") { () =>
+    assertEquals(world.last._1, 422, world.last._2)
+    val cohort = world.held.getOrElse("refusing", november)
+    assertEquals(readCohort(cohort)("questions").arr.size, 0)
   }

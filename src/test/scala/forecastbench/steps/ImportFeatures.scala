@@ -1,5 +1,6 @@
 package forecastbench.steps
 
+import forecastbench.domain.OutcomeValue
 import forecastbench.domain.Ids
 import forecastbench.support.ScriptedVenue
 import forecastbench.venues.VenueQuestion
@@ -7,12 +8,6 @@ import forecastbench.venues.VenueQuestion
 import java.time.Duration
 
 class ImportFeatures extends FeatureSuite("features/questions/import.feature") with OutcomeSteps:
-
-  override protected def pending = Set(
-    // T069: the development questions.
-    "a question its venue has already resolved is imported as a development question",
-    "a development question never becomes prospective"
-  )
 
   private def venueName(v: String) = v.toLowerCase
 
@@ -169,4 +164,44 @@ class ImportFeatures extends FeatureSuite("features/questions/import.feature") w
     val q = json(ok(get(s"/questions/${questionId("rates")}")))
     assertEquals(q("standing").str, "prospective")
     assertEquals(q("outcomes").arr.head("value").str, "yes")
+  }
+
+  Given("the venue {string} lists a resolved question {string}") {
+    (venue: String, statement: String) =>
+      val id = listing(venue, statement)(identity)
+      fixture
+        .venue(venue)
+        .resolve(id, OutcomeValue.No, fixture.clock.now.minus(Duration.ofDays(30)))
+  }
+
+  When("the experimenter imports resolved questions from {string}") { (venue: String) =>
+    fixture.venue(venue).only = Some(s"s${world.n}-")
+    world.last = post(s"/venues/${venueName(venue)}/import", """{"standing":"development"}""")
+  }
+
+  Then("the question is a development question") { () =>
+    ok(world.last): Unit
+    assertEquals(question("standing").str, "development")
+  }
+
+  Then("its outcome is held with it") { () =>
+    val outcomes = question("outcomes").arr
+    assertEquals(outcomes.map(_("value").str).toList, List("no"))
+  }
+
+  Given("a development question") { () =>
+    val id = listing("Kalshi", "rehearsed")(identity)
+    fixture.kalshi.resolve(id, OutcomeValue.Yes, fixture.clock.now.minus(Duration.ofDays(30)))
+    fixture.kalshi.only = Some(s"s${world.n}-")
+    ok(post("/venues/kalshi/import", """{"standing":"development"}""")): Unit
+    assertEquals(question("standing").str, "development")
+  }
+
+  When("the experimenter imports questions from its venue again") { () =>
+    world.last = importFrom("Kalshi")
+  }
+
+  Then("the question is still a development question") { () =>
+    assertEquals(question("standing").str, "development")
+    assertEquals(question("outcomes").arr.map(_("value").str).toList, List("yes"))
   }
