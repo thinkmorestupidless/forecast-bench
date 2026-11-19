@@ -167,6 +167,20 @@ final class CohortEndpoint(client: ComponentClient, views: ViewClient)
         Respond(Forecasting.started(round, again.size), 202)
   }
 
+  /** Scores the cohort's runs again by another method; the earlier scores are kept. */
+  post("/{id}/score") { (id: String) =>
+    val held = read(id)
+    val version =
+      query.optional[Int]("method").getOrElse(held.scoringMethod.getOrElse(ScoringMethod))
+    val method = Bench.edges.scoring
+      .getOrElse(version, throw HttpProblem(422, s"there is no scoring method $version"))
+    val runs = recorded(held)
+    val scored = runs.count(r =>
+      Scorer.question(client, r.question).exists(Scorer.scoreRun(client, r.id, method, _))
+    )
+    Scored(version, scored)
+  }
+
   get("/{id}")((id: String) => read(id))
 
   /** The cohort's own events, with each run's recording, in the order they happened. */
@@ -259,6 +273,9 @@ object CohortEndpoint:
       }
       .sorted
 
+  /** How many runs a scoring made, by which method. */
+  final case class Scored(method: Int, scored: Int)
+
   /**
    * A round of forecasting started and how many runs it is to make; or a refusal, as every refusal
    * reads, with the runs it means.
@@ -319,4 +336,5 @@ object CohortEndpoint:
   given JsonValueCodec[FreezeRequest]    = Codecs.make
   given JsonValueCodec[Cohort]           = Codecs.make
   given JsonValueCodec[Forecasting]      = Codecs.make
+  given JsonValueCodec[Scored]           = Codecs.make
   given JsonValueCodec[List[Happened]]   = Codecs.make

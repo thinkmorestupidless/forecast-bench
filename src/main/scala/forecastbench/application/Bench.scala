@@ -15,7 +15,8 @@ final case class Edges(
     clock: Clock,
     settings: Settings,
     venues: Map[String, Venue],
-    models: Models
+    models: Models,
+    scoring: Map[Int, forecastbench.report.Scoring.Method] = forecastbench.report.Scoring.methods
 )
 
 object Bench:

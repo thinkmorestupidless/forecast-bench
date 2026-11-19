@@ -34,7 +34,10 @@ object BenchService:
     QuestionForecast.descriptor,
     CohortForecast.descriptor,
     WatchedEntity.descriptor,
-    ReadOutcomes.descriptor
+    ReadOutcomes.descriptor,
+    QuestionRunsEntity.descriptor,
+    ScoreOnRecord.descriptor,
+    ScoreOnOutcome.descriptor
   )
 
   def endpoints: Seq[EndpointClients => HttpEndpoint] = Seq(
