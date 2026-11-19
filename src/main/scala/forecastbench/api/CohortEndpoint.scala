@@ -7,7 +7,7 @@ import com.thinkmorestupidless.ankka.runtime.{SqlFragment, ViewClient}
 import com.thinkmorestupidless.ankka.runtime.SqlSyntax.*
 import com.thinkmorestupidless.ankka.sdk.ComponentClient
 import forecastbench.application.*
-import forecastbench.application.views.Questions
+import forecastbench.application.views.{Questions, Runs}
 import forecastbench.domain.*
 
 import java.time.Instant
@@ -109,6 +109,35 @@ final class CohortEndpoint(client: ComponentClient, views: ViewClient)
     )
   }
 
+  post("/{id}/forecast") { (id: String) =>
+    val held = read(id)
+    val made = Runs
+      .of(views, Some(id), None, None)
+      .map(r => RunKey(r.run.question, r.run.arm, r.run.repetition))
+      .distinct
+      .toList
+    val started = cohort(id).call(CohortEntity.startForecast).invoke(Start(made, now))
+    if !started.started then
+      Respond(
+        Forecasting.refused(
+          started.notMade.headOption.fold(Cohort.WindowEnded)(_.reason),
+          started.notMade
+        ),
+        409
+      )
+    else
+      val have = made.map(k => (k.question, k.arm, k.repetition)).toSet
+      val plans = CohortEndpoint.plans(
+        held,
+        held.runs.filterNot(have.contains).map((q, a, r) => (q, a, r, 1))
+      )
+      client
+        .forWorkflow(EntityId(CohortForecast.id(id, 1)))
+        .call(CohortForecast.start)
+        .invoke(Round(id, 1, plans)): Unit
+      Respond(Forecasting.started(1, plans.map(_.runs.size).sum), 202)
+  }
+
   get("/{id}")((id: String) => read(id))
 
   private def read(id: String): Cohort =
@@ -141,6 +170,36 @@ final class CohortEndpoint(client: ComponentClient, views: ViewClient)
       .toList
 
 object CohortEndpoint:
+
+  /** The question workflows' plans for these runs: question, arm, repetition and attempt. */
+  def plans(c: Cohort, runs: List[(String, String, Int, Int)]): List[QuestionPlan] =
+    runs.groupBy(_._1).toList.sortBy(_._1).map { (q, rs) =>
+      QuestionPlan(
+        c.id,
+        q,
+        c.model,
+        c.pretendedTime,
+        c.instructions,
+        rs.map((_, a, r, n) => RunPlan(a, r, n)).sortBy(p => (p.arm, p.repetition)),
+        None
+      )
+    }
+
+  /**
+   * A round of forecasting started and how many runs it is to make; or a refusal, as every refusal
+   * reads, with the runs it means.
+   */
+  final case class Forecasting(
+      status: Int,
+      round: Option[Int],
+      runs: Option[Int],
+      error: Option[String],
+      notMade: List[NotMade]
+  )
+  object Forecasting:
+    def started(round: Int, runs: Int) = Forecasting(202, Some(round), Some(runs), None, Nil)
+    def refused(why: String, notMade: List[NotMade]) =
+      Forecasting(409, None, None, Some(why), notMade)
 
   /** The only gatherer and the only scoring method this feature has. */
   val GathererVersion = 1
@@ -185,3 +244,4 @@ object CohortEndpoint:
   given JsonValueCodec[ArmsRequest]      = Codecs.make
   given JsonValueCodec[FreezeRequest]    = Codecs.make
   given JsonValueCodec[Cohort]           = Codecs.make
+  given JsonValueCodec[Forecasting]      = Codecs.make

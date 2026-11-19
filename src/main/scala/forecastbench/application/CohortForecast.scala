@@ -57,7 +57,7 @@ final class CohortForecast(context: WorkflowContext) extends Workflow[CohortFore
             ended = false
           )
         )
-        .transitionTo(CohortForecast.dispatch)
+        .transitionTo(CohortForecast.dispatch.ref)
         .thenReply(Done)
 
   def questionEnded(@scala.annotation.unused question: String): Effect[Done] =
@@ -65,7 +65,7 @@ final class CohortForecast(context: WorkflowContext) extends Workflow[CohortFore
     else
       effects
         .updateState(currentState.copy(dispatching = true))
-        .transitionTo(CohortForecast.dispatch)
+        .transitionTo(CohortForecast.dispatch.ref)
         .thenReply(Done)
 
   def get: ReadOnlyEffect[CohortForecastState] = effects.reply(currentState)

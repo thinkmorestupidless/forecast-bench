@@ -60,7 +60,7 @@ final class QuestionForecast(context: WorkflowContext) extends Workflow[Question
       val runs  = plan.runs.sortBy(r => (order.indexOf(r.arm), r.repetition))
       effects
         .updateState(currentState.copy(plan = Some(plan), pending = runs))
-        .transitionTo(QuestionForecast.refresh)
+        .transitionTo(QuestionForecast.refresh.ref)
         .thenReply(Done)
 
   def get: ReadOnlyEffect[QuestionForecastState] = effects.reply(currentState)
