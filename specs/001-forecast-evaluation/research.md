@@ -400,6 +400,113 @@ the pull request is the independent one.
   each needs something to register.
 - 2026-11-19: this machine's default JDK is 27, not the family's 21; the build compiles and its
   suite passes there, with deprecation warnings from the JDK about `sun.misc.Unsafe`. CI is on 21.
+- 2026-11-19 (T013): 'a prospective question stays prospective after it resolves' needs a frozen
+  cohort and the outcome reader; bound with T038.
+- 2026-11-19 (T016): no keyed view cohort-questions: a cohort's row in the cohorts view names its
+  questions, which is all the outcome reader needs; the scorer finds a question's runs in the runs
+  view by question.
+- 2026-11-19 (T018): a freeze is also refused with no budget ("the cohort has no budget"): FR-005
+  says a cohort names one.
+- 2026-11-19 (T019): the arms and runs features' background ("a frozen cohort ... and a prospective
+  question") drafts the cohort with its question; the first step that forecasts adds the arms the
+  scenario names and freezes it, since a frozen cohort could not be given them.
+- 2026-11-19 (T015): `given` is a keyword in Scala 3, so the contract's method is written
+  `` `given` ``; an arm answers its user text and the step gives the system text, the version of the arm's
+  instructions the cohort fixed.
+- 2026-11-19 (T023, T024): the forecaster is not an ankka agent. `ModelRequest` carries no session
+  id, so a wrapper cannot attribute usage by session; and an agent's typed reply hides the exact
+  text the bucket must keep. The steps call the cohort's model provider directly through
+  `MeteredProvider`, which reads each reply's usage and times the call: the fallback of "Verify at
+  implementation" without its dependence on session memory. A reply that does not decode, and a
+  provider that errors or times out, are values the step records.
+- 2026-11-19 (T026): a run's cost is reserved as an estimate: about three characters to a token of
+  what the model is given, and two thousand tokens of answer, at the model's prices; settling
+  replaces it with what the run cost. The venue-price arm costs nothing and reserves nothing. The
+  question workflow makes one run a step, so no step outlives its five minutes whatever the
+  repetitions; and its cohort workflow, since a command's state change is overwritten by a running
+  step's, is only woken by a question's end and asks each question workflow itself, with a pause
+  deadline of 20 seconds behind a lost wake.
+- 2026-11-19 (T030): the budget is held by estimates, so questions forecast in parallel can each
+  reserve under it while their runs, settled later, pass it: the overshoot is at most one run's cost
+  for each question in flight (bench.concurrency). The scenario uses one question;
+  docs/limitations.md says so.
+- 2026-11-19 (T031): the forecast and retry routes read a cohort's runs from the run entities,
+  attempt after attempt, not from the runs view, which may not yet hold the run that just failed.
+- 2026-11-19 (T036): a timed action has no view client, so the outcome reader reads the questions a
+  key value entity `watched` names, which the freeze route fills with the frozen cohort's questions.
+  It reads every watched question, not only those waiting or disputed, so a venue's later change to
+  a settled result is read and recorded as a revision (features/outcomes/outcome.feature).
+- 2026-11-19 (T037): a consumer has no view client either, so a consumer of run events writes each
+  run's id to a key value entity per question, `question-runs`, and scores the run at once if its
+  question already has a settled outcome (a development cohort's runs come after their outcomes);
+  the consumer of question events scores a question's runs from that list. The scoring methods are a
+  value of the edges (`Edges.scoring`, method 1 only); the consumers and the score route compute a
+  score and the run entity decides whether it may hold it. features/scoring/score.feature names a
+  method 2, which the bench does not have: the suites' fixture adds one (method 1 with a log bound
+  of 0.001) rather than the bench inventing a second method.
+- 2026-11-19 (T038): GherkinSuite matches a step by its text whatever its keyword, so a state step
+  that a feature writes both as a Given and a Then ("the outcome of \"rates\" is \"yes\"") arranges
+  the state before the scenario's action and checks it after; every When step marks the action taken
+  (test/steps/OutcomeSteps.scala).
+- 2026-11-19 (T044): two endpoints cannot share a prefix (the server routes by it), so a cohort's
+  report, comparison and calibration routes are the cohort endpoint's, built by `Reports`;
+  `/reports` and `/reports.md` are endpoints of their own.
+- 2026-11-19 (T045 is bound after T066): the report feature's background names the evidence, graph
+  and prose arms, which the bench has from T046 and T056 on. `test/api/ReportRoutesSuite.scala`
+  serves the routes on a model-alone cohort meanwhile.
+- 2026-11-19 (T050, T053): every frozen cohort gathers (FR-016), whatever its arms, so every freeze
+  fixes the version of gatherer-queries. The search is a value of the edges: Exa in the service, the
+  scripted search in the suites.
+- 2026-11-19 (T054): Exa's `POST /search` read from its documentation on 2026-11-19 (key in
+  `x-api-key`; `endPublishedDate` for a pretended time; `contents.text.maxCharacters` for the
+  excerpt). Exa names no source, so a document's source is its address's host. The replies in
+  `src/test/resources/exa/` are written from the documented shape, not captured; no call has been
+  made with a key (T079 is the first).
+- 2026-11-19 (T056): Asked of the person. contracts/arm.md's prose sentence named no document, and
+  free text with quotes, "; " or line breaks could not be read back, so `contentOf` could not
+  recover what the contract says it does. The person chose: the prose sentence names the document as
+  `[n]` after "According to", every source, statement, excerpt and open point is escaped (`\\`,
+  `\"`, `\n`) in both renderings, and the prose's open points are each quoted. The contract is
+  changed to say so. The property runs over 500 seeded random contents in munit; no property-testing
+  library was added.
+- 2026-11-19 (T061): the appraisal is made in round 0, after the gather, so it is once for a
+  question by construction; the graph and prose steps wait for it as the evidence arm waits for its
+  pack.
+- 2026-11-19 (T063): an arm waits for its pack or its appraisal at most 300 times, 2 seconds apart
+  (ten minutes), and is then not made, saying which it waited for; without a bound a round 0 that
+  failed would leave its arms waiting for ever. The appraisal's cost is in each run that reads it
+  (FR-027) and so in what the cohort has spent, once for each such run; the reservation includes it.
+  A graph run's reasons that are not claims of its appraisal are dropped from the belief and the
+  count noted on the cohort; a belief not written after one retry is noted on the cohort.
+- 2026-11-19 (T064): the equality is checked before the second run's model is called, so a run that
+  fails it costs nothing. Its failing path is exercised by a suite of the bench's own,
+  `src/test/resources/features/arms/equality/equality.feature`, which makes the graph lose a claim
+  between the two runs; no living scenario can.
+- 2026-11-19 (T059): bodies sent to the reasoning service and to Exa leave an absent field out
+  (`domain/Wire.scala`); ankka's `Codecs.make` writes it as `null`, which neither documents
+  accepting.
+- 2026-11-19 (T045): outcome reading of every watched question was serial (two entity calls each); a
+  bench with thousands of watched questions outlasted the route's timeout. OutcomeReader now reads
+  them on virtual threads, 32 at once.
+- 2026-11-19 (T045/T067): the report scenarios' exact interval bounds (-0.031 to -0.004; -0.020 to
+  0.011) cannot be produced through the routes, since the interval is drawn from the scores; the
+  suite asserts the side of nought the bounds name and what the comparison says.
+- 2026-11-19 (T073, Kalshi as read that day): prices are dollar strings (`yes_bid_dollars`,
+  `yes_ask_dollars`, `last_price_dollars`, `volume_fp`); a bid of 0 and an ask of 1 are read as no
+  order on that side, and a last price with no volume as no trade, so an untraded market gives no
+  probability rather than 0. Combination markets (`KXMVE…`) are excluded with `mve_filter=exclude`.
+  A missing market answers 404 at both `/markets/{t}` and `/historical/markets/{t}`; the venue then
+  says none.
+- 2026-11-19 (T074, Polymarket as read that day, against R9): tags come only with
+  `include_tag=true`; the keyset cursor is sent back as `after_cursor`; the dispute field is
+  `umaResolutionStatuses`, a JSON-encoded history whose last entry is read; `closedTime` is
+  `2026-11-04 10:53:59.942479+00`, not ISO 8601. The first tag, which R9 makes the category, is
+  sometimes a promotional label (`HFC`, `Earn 3.25%`); the experimenter's domain names map
+  categories, so such a label is named there or left without a domain.
+- 2026-11-19 (T078): the live suite is gated on FORECAST_LIVE=1 as well as on the two keys and the
+  reasoning stack: it installs the real edges in Bench, which is one per JVM, so it must never run
+  beside the feature suites' scripted bench in one `sbt test`. `just live` sets the gate and runs it
+  alone.
 
 ## Measurements
 
