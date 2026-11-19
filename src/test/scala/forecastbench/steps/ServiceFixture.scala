@@ -20,7 +20,13 @@ object ServiceFixture:
 
   val clock: TestClock = TestClock(TestClock.Start)
 
-  lazy val settings: Settings = Settings.load()
+  /** The configured models, and `model-a` and `model-b`, the names the features use. */
+  lazy val settings: Settings =
+    val loaded = Settings.load()
+    val entry  = loaded.models.values.head
+    loaded.copy(models =
+      loaded.models ++ Seq("model-a", "model-b").map(n => n -> entry.copy(name = n, model = n))
+    )
 
   val kalshi: ScriptedVenue     = ScriptedVenue("kalshi")
   val polymarket: ScriptedVenue = ScriptedVenue("polymarket")
