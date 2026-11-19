@@ -19,7 +19,14 @@ final class ScriptedModel extends ModelProvider:
     ConcurrentLinkedQueue[(String, ModelRequest => Either[String, ModelResponse])]()
   private val seen = ConcurrentLinkedQueue[ModelRequest]()
 
-  /** Answers the requests whose system or user text holds `word`; the latest rule wins. */
+  /** The gatherer's query requests are answered by rules of their own, never a forecast's. */
+  private val queryRules =
+    ConcurrentLinkedQueue[(String, ModelRequest => Either[String, ModelResponse])]()
+
+  def whenQueries(word: String)(answer: ModelRequest => Either[String, ModelResponse]): Unit =
+    queryRules.add(word -> answer): Unit
+
+  /** Answers the forecasting requests whose text holds `word`; the latest rule wins. */
   def when(word: String)(answer: ModelRequest => Either[String, ModelResponse]): Unit =
     rules.add(word -> answer): Unit
 
@@ -34,10 +41,15 @@ final class ScriptedModel extends ModelProvider:
 
   def complete(request: ModelRequest): Future[ModelResponse] =
     seen.add(request)
-    val text = ScriptedModel.text(request)
-    rules.asScala.toVector.reverse.find((w, _) => text.contains(w)) match
+    val text  = ScriptedModel.text(request)
+    val among = if ScriptedModel.writesQueries(request) then queryRules else rules
+    among.asScala.toVector.reverse.find((w, _) => text.contains(w)) match
       case Some((_, answer)) =>
         answer(request).fold(why => Future.failed(ModelCallFailed(name, why)), Future.successful)
+      case None if ScriptedModel.writesQueries(request) =>
+        Future.successful(
+          ModelResponse(ScriptedModel.queries(request), usage = ScriptedModel.Usage)
+        )
       case None =>
         Future.successful(ModelResponse(ScriptedModel.forecast(0.5), usage = ScriptedModel.Usage))
 
@@ -48,6 +60,18 @@ object ScriptedModel:
   def forecast(p: Double, reasons: List[String] = Nil): String =
     val r = reasons.map(x => s""""$x"""").mkString(",")
     s"""{"probability": $p, "abstain": null, "reasons": [$r], "rationale": "scripted"}"""
+
+  /** A request for the gatherer's queries, by its instructions' first words. */
+  def writesQueries(r: ModelRequest): Boolean =
+    r.systemMessage.exists(_.startsWith("You write search queries"))
+
+  /** Two queries that repeat the statement, so a scenario's scripted search finds them by it. */
+  def queries(r: ModelRequest): String =
+    val statement = text(r.copy(systemMessage = None)).linesIterator
+      .find(_.startsWith("Question: "))
+      .map(_.stripPrefix("Question: "))
+      .getOrElse("")
+    s"""{"queries": ["latest on $statement", "figures for $statement"]}"""
 
   def text(r: ModelRequest): String =
     (r.systemMessage.toVector ++ r.messages.collect { case ChatMessage.User(content) =>
