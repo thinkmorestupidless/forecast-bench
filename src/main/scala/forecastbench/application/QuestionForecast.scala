@@ -221,6 +221,8 @@ final class QuestionForecast(context: WorkflowContext) extends Workflow[Question
         )
         record(recorded)
         next(made(run, recorded.id))
+      case Right(userGiven) if appraisal.exists((_, c) => !sameContent(run, userGiven.user, c)) =>
+        failedRun(run, ShapesDiffer, pack)
       case Right(userGiven) =>
         val ref    = arm.instructions.flatMap(plan.instructions.get)
         val system = ref.flatMap(r => Instructions.at(arm.instructions.get, r.version)).map(_.text)
@@ -270,6 +272,34 @@ final class QuestionForecast(context: WorkflowContext) extends Workflow[Question
             if run.arm == Arms.graph.name
           do believe(runId, run, p, forecast.reasons, m, content)
           next(made(run, runId))
+
+  /**
+   * The equality of contracts/arm.md: what this run is to be given holds the appraisal's content,
+   * and so does what the other arm of the pair was given for the same repetition, when it has a run
+   * (FR-025). Checked before the model is called, so a run that fails it costs nothing.
+   */
+  private def sameContent(run: RunPlan, text: String, content: AppraisalContent): Boolean =
+    val expected = Shape.of(content)
+    val other    = if run.arm == Arms.graph.name then Arms.prose.name else Arms.graph.name
+    val partner = (1 to MaxAttempts).reverse.iterator
+      .flatMap(a =>
+        client
+          .forEventSourcedEntity(
+            EntityId(Ids.run(plan.cohort, plan.question, other, run.repetition, a))
+          )
+          .call(RunEntity.get)
+          .invoke()
+          .run
+          .flatMap(_.`given`)
+      )
+      .nextOption()
+      .map(ref =>
+        GivenBucket
+          .read(context.storage, ref)
+          .flatMap(k => Given.parse(k.text))
+          .flatMap(g => Shape.contentOf(g.user))
+      )
+    Shape.contentOf(text).contains(expected) && partner.forall(_.contains(expected))
 
   /**
    * The graph arm's forecast held as a belief in the yes hypothesis, resting on the reasons it
@@ -498,6 +528,10 @@ object QuestionForecast
 
   val NoPackInTime      = "the pack was not gathered in time"
   val NoAppraisalInTime = "the appraisal was not made in time"
+  val ShapesDiffer      = "the two shapes did not hold the same content"
+
+  /** The attempts of a run looked through for the other arm of a pair. */
+  val MaxAttempts = 5
 
   val finish = step("finish")(_.finishStep)
 
