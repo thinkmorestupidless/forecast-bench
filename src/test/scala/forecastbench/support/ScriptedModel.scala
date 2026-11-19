@@ -15,51 +15,58 @@ final class ScriptedModel extends ModelProvider:
   val name      = "scripted"
   val modelName = "scripted"
 
-  private val rules =
-    ConcurrentLinkedQueue[(String, ModelRequest => Either[String, ModelResponse])]()
   private val seen = ConcurrentLinkedQueue[ModelRequest]()
 
-  /** The gatherer's query requests are answered by rules of their own, never a forecast's. */
-  private val queryRules =
-    ConcurrentLinkedQueue[(String, ModelRequest => Either[String, ModelResponse])]()
-
-  def whenQueries(word: String)(answer: ModelRequest => Either[String, ModelResponse]): Unit =
-    queryRules.add(word -> answer): Unit
+  /** Each kind of request is answered by rules of its own: a forecast's never answers a query. */
+  private val rules = ScriptedModel.Task.values
+    .map(t => t -> ConcurrentLinkedQueue[(String, ModelRequest => Either[String, ModelResponse])]())
+    .toMap
 
   /** Answers the forecasting requests whose text holds `word`; the latest rule wins. */
   def when(word: String)(answer: ModelRequest => Either[String, ModelResponse]): Unit =
-    rules.add(word -> answer): Unit
+    whenTask(ScriptedModel.Task.Forecast, word)(answer)
+
+  def whenQueries(word: String)(answer: ModelRequest => Either[String, ModelResponse]): Unit =
+    whenTask(ScriptedModel.Task.Queries, word)(answer)
+
+  /** Answers the appraisal's reading of a document whose text holds `word`. */
+  def whenReading(word: String)(answer: ModelRequest => Either[String, ModelResponse]): Unit =
+    whenTask(ScriptedModel.Task.Reading, word)(answer)
+
+  def whenOpenPoints(word: String)(answer: ModelRequest => Either[String, ModelResponse]): Unit =
+    whenTask(ScriptedModel.Task.OpenPoints, word)(answer)
+
+  def whenTask(task: ScriptedModel.Task, word: String)(
+      answer: ModelRequest => Either[String, ModelResponse]
+  ): Unit = rules(task).add(word -> answer): Unit
 
   def replies(word: String, text: String, usage: TokenUsage = ScriptedModel.Usage): Unit =
     when(word)(_ => Right(ModelResponse(text, usage = usage)))
 
   def unreachable(word: String): Unit = when(word)(_ => Left("the scripted model is down"))
 
-  /** Every request whose text holds `word`, in the order they came. */
-  def requests(word: String): Vector[ModelRequest] =
-    seen.asScala.toVector.filter(r =>
-      !ScriptedModel.writesQueries(r) && ScriptedModel.text(r).contains(word)
-    )
+  /** Every forecasting request whose text holds `word`, in the order they came. */
+  def requests(word: String): Vector[ModelRequest] = tasks(ScriptedModel.Task.Forecast, word)
 
   /** Every request for the gatherer's queries whose text holds `word`. */
-  def queryRequests(word: String): Vector[ModelRequest] =
+  def queryRequests(word: String): Vector[ModelRequest] = tasks(ScriptedModel.Task.Queries, word)
+
+  def tasks(task: ScriptedModel.Task, word: String): Vector[ModelRequest] =
     seen.asScala.toVector.filter(r =>
-      ScriptedModel.writesQueries(r) && ScriptedModel.text(r).contains(word)
+      ScriptedModel.Task.of(r) == task && ScriptedModel.text(r).contains(word)
     )
 
   def complete(request: ModelRequest): Future[ModelResponse] =
     seen.add(request)
-    val text  = ScriptedModel.text(request)
-    val among = if ScriptedModel.writesQueries(request) then queryRules else rules
-    among.asScala.toVector.reverse.find((w, _) => text.contains(w)) match
+    val text = ScriptedModel.text(request)
+    val task = ScriptedModel.Task.of(request)
+    rules(task).asScala.toVector.reverse.find((w, _) => text.contains(w)) match
       case Some((_, answer)) =>
         answer(request).fold(why => Future.failed(ModelCallFailed(name, why)), Future.successful)
-      case None if ScriptedModel.writesQueries(request) =>
-        Future.successful(
-          ModelResponse(ScriptedModel.queries(request), usage = ScriptedModel.Usage)
-        )
       case None =>
-        Future.successful(ModelResponse(ScriptedModel.forecast(0.5), usage = ScriptedModel.Usage))
+        Future.successful(
+          ModelResponse(ScriptedModel.default(task, request), usage = ScriptedModel.Usage)
+        )
 
 object ScriptedModel:
   /** What every scripted call uses unless a scenario says: 1,000 tokens in and 200 out. */
@@ -69,9 +76,51 @@ object ScriptedModel:
     val r = reasons.map(x => s""""$x"""").mkString(",")
     s"""{"probability": $p, "abstain": null, "reasons": [$r], "rationale": "scripted"}"""
 
-  /** A request for the gatherer's queries, by its instructions' first words. */
-  def writesQueries(r: ModelRequest): Boolean =
-    r.systemMessage.exists(_.startsWith("You write search queries"))
+  /** What a request asks for, by its instructions' first words. */
+  enum Task:
+    case Forecast, Queries, Reading, OpenPoints
+
+  object Task:
+    def of(r: ModelRequest): Task =
+      val system = r.systemMessage.getOrElse("")
+      if system.startsWith("You write search queries") then Queries
+      else if system.startsWith("You read one document") then Reading
+      else if system.startsWith("You find what the evidence leaves open") then OpenPoints
+      else Forecast
+
+  def writesQueries(r: ModelRequest): Boolean = Task.of(r) == Task.Queries
+
+  def default(task: Task, r: ModelRequest): String = task match
+    case Task.Forecast => forecast(0.5)
+    case Task.Queries  => queries(r)
+    case Task.Reading =>
+      claims(List(("The document bears on the question", "supports", quoteOf(r))))
+    case Task.OpenPoints =>
+      openPoints(List("Whether what the documents report will hold until the question closes"))
+
+  /** The excerpt of the one document a reading request gives. */
+  def excerptOf(r: ModelRequest): String =
+    text(r.copy(systemMessage = None))
+      .split("\nDocument:\n", 2)
+      .lift(1)
+      .map(_.linesIterator.drop(1).mkString("\n"))
+      .getOrElse("")
+
+  /** The first few words of the document a reading request gives: a quote that is in it. */
+  def quoteOf(r: ModelRequest, words: Int = 4): String =
+    excerptOf(r).trim.split("\\s+").take(words).mkString(" ")
+
+  private def str(s: String) = ujson.write(ujson.Str(s))
+
+  def claims(claims: List[(String, String, String)]): String =
+    claims
+      .map((st, stance, q) =>
+        s"""{"statement": ${str(st)}, "stance": ${str(stance)}, "quote": ${str(q)}}"""
+      )
+      .mkString("""{"claims": [""", ", ", "]}")
+
+  def openPoints(points: List[String]): String =
+    points.map(str).mkString("""{"openPoints": [""", ", ", "]}")
 
   /** Two queries that repeat the statement, so a scenario's scripted search finds them by it. */
   def queries(r: ModelRequest): String =
