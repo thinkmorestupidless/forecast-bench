@@ -28,6 +28,11 @@ run:
 test:
     sbt test
 
+# The bench against Kalshi, Exa, the model and the reasoning stack: three development questions, five
+# arms. Spends money; needs ANTHROPIC_API_KEY, EXA_API_KEY and `just reasoning-up`.
+live:
+    FORECAST_LIVE=1 sbt "testOnly forecastbench.live.LiveSuite"
+
 # The reasoning service on :9100 with its Postgres, Kafka, Neo4j and the sink.
 reasoning-up:
     ./scripts/reasoning-up.sh
