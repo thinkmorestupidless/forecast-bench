@@ -1,6 +1,7 @@
 package forecastbench.application
 
 import forecastbench.domain.Clock
+import forecastbench.venues.Venue
 
 /**
  * What the bench's components reach outside the platform: the clock, the settings, and (as later
@@ -10,7 +11,7 @@ import forecastbench.domain.Clock
  * handed these at construction. They are installed once, before the service starts, by `Main` or by
  * the suites' fixture, and read through `Bench.edges`. One service in a JVM, so one set.
  */
-final case class Edges(clock: Clock, settings: Settings)
+final case class Edges(clock: Clock, settings: Settings, venues: Map[String, Venue])
 
 object Bench:
 

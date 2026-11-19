@@ -8,7 +8,9 @@ import com.thinkmorestupidless.ankka.runtime.{
   RuntimeExtension,
   TimerRuntime
 }
-import forecastbench.application.{Bench, Edges, Settings}
+import forecastbench.api.*
+import forecastbench.application.*
+import forecastbench.application.views.*
 import forecastbench.domain.Clock
 
 /**
@@ -21,9 +23,16 @@ import forecastbench.domain.Clock
  */
 object BenchService:
 
-  def components: Seq[ComponentDescriptor] = Seq.empty
+  def components: Seq[ComponentDescriptor] = Seq(
+    QuestionEntity.descriptor,
+    Questions.descriptor,
+    DomainsEntity.descriptor
+  )
 
-  def endpoints: Seq[EndpointClients => HttpEndpoint] = Seq.empty
+  def endpoints: Seq[EndpointClients => HttpEndpoint] = Seq(
+    clients => VenueEndpoint(clients.componentClient),
+    clients => QuestionEndpoint(clients.componentClient, clients.viewClient)
+  )
 
   /** The extensions of a service, in the order they start. */
   def extensions(timers: TimerRuntime, http: RuntimeExtension): Seq[RuntimeExtension] =
@@ -34,7 +43,7 @@ object BenchService:
  * database and every `ANKKA_*` variable.
  */
 @main def run(): Unit =
-  Bench.install(Edges(Clock.system, Settings.load()))
+  Bench.install(Edges(Clock.system, Settings.load(), venues = Map.empty))
   val timers  = TimerRuntime()
   val builder = Ankka.service.registerAll(BenchService.components)
   val service = BenchService
