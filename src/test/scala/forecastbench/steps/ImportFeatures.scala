@@ -6,14 +6,12 @@ import forecastbench.venues.VenueQuestion
 
 import java.time.Duration
 
-class ImportFeatures extends FeatureSuite("features/questions/import.feature"):
+class ImportFeatures extends FeatureSuite("features/questions/import.feature") with OutcomeSteps:
 
   override protected def pending = Set(
     // T069: the development questions.
     "a question its venue has already resolved is imported as a development question",
-    "a development question never becomes prospective",
-    // T038: needs a frozen cohort and the outcome reader.
-    "a prospective question stays prospective after it resolves"
+    "a development question never becomes prospective"
   )
 
   private def venueName(v: String) = v.toLowerCase
@@ -150,4 +148,25 @@ class ImportFeatures extends FeatureSuite("features/questions/import.feature"):
 
   Then("{string} questions are held from {string}") { (n: String, venue: String) =>
     assertEquals(heldFrom(venue), n.toInt)
+  }
+
+  Given("a prospective question in a frozen cohort") { () =>
+    val id = draft("november")
+    settle(id, List(importedQuestion("rates")), List("model-alone"))
+    freeze(id): Unit
+  }
+
+  When("its venue resolves it") { () =>
+    resolve("rates", "yes")
+    readOutcomes(): Unit
+    // And an import that lists it again, as a later import of resolved questions would.
+    fixture.kalshi.only = Some(world.venueId("rates"))
+    post("/venues/kalshi/import", """{"standing":"development","onePerEvent":false}"""): Unit
+    fixture.kalshi.only = None
+  }
+
+  Then("the question is still prospective") { () =>
+    val q = json(ok(get(s"/questions/${questionId("rates")}")))
+    assertEquals(q("standing").str, "prospective")
+    assertEquals(q("outcomes").arr.head("value").str, "yes")
   }
