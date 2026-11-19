@@ -7,7 +7,7 @@ import com.thinkmorestupidless.ankka.runtime.{SqlFragment, ViewClient}
 import com.thinkmorestupidless.ankka.runtime.SqlSyntax.*
 import com.thinkmorestupidless.ankka.sdk.ComponentClient
 import forecastbench.application.*
-import forecastbench.application.views.{Questions, Runs}
+import forecastbench.application.views.Questions
 import forecastbench.domain.*
 
 import java.time.Instant
@@ -168,9 +168,10 @@ final class CohortEndpoint(client: ComponentClient, views: ViewClient)
   get("/{id}/history") { (id: String) =>
     val own = cohort(id).call(CohortEntity.get).invoke()
     if own.cohort.isEmpty then Refusals.notFound(s"no cohort '$id'")
-    val runs = Runs
-      .of(views, Some(id), None, None)
-      .map(r => Happened(r.run.recordedAt, s"run ${r.run.id} recorded, ${r.run.ending.word}"))
+    val runs = recorded(own.cohort.get).map(r =>
+      Happened(r.recordedAt, s"run ${r.id} recorded, ${r.ending.word}")
+    )
+    // A stable sort: what happened at one instant keeps the order it was written in.
     (own.history ++ runs).sortBy(_.at)
   }
 

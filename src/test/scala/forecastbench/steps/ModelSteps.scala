@@ -40,11 +40,16 @@ trait ModelSteps extends CohortSetup:
     world.last = forecastBy(words, name)
   }
 
-  /** Adds the arm to the background's cohort, freezes it and forecasts it. */
+  /** Adds the arm to the background's cohort and freezes it, unless a step already has. */
+  protected def frozenWith(words: String): Unit =
+    if readCohort(november)("status").str == "drafted" then
+      ok(post(s"/cohorts/$november/arms", s"""{"arms":["${arm(words)}"]}""")): Unit
+      freeze(november): Unit
+
+  /** The arm forecasts the background's question: added, frozen and forecast. */
   protected def forecastBy(words: String, name: String): (Int, String) =
     questionId(name): Unit
-    ok(post(s"/cohorts/$november/arms", s"""{"arms":["${arm(words)}"]}""")): Unit
-    freeze(november): Unit
+    frozenWith(words)
     forecastAndWait(november)
 
   protected def retryAndWait(): (Int, String) =
