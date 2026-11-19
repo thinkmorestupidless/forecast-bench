@@ -45,7 +45,9 @@ object BenchService:
     clients => QuestionEndpoint(clients.componentClient, clients.viewClient),
     clients => CohortEndpoint(clients.componentClient, clients.viewClient),
     clients => RunEndpoint(clients.componentClient, clients.viewClient, clients.storage),
-    clients => OutcomeEndpoint(clients.componentClient)
+    clients => OutcomeEndpoint(clients.componentClient),
+    clients => ReportEndpoint(clients.componentClient, clients.viewClient),
+    clients => ReportPageEndpoint(clients.componentClient, clients.viewClient)
   )
 
   /** The extensions of a service, in the order they start. */

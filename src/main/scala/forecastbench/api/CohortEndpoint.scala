@@ -183,6 +183,27 @@ final class CohortEndpoint(client: ComponentClient, views: ViewClient)
 
   get("/{id}")((id: String) => read(id))
 
+  private val reports = Reports(client, views)
+
+  get("/{id}/report") { (id: String) =>
+    reports.of(List(id))
+  }
+
+  get("/{id}/report.md")((id: String) => Reports.page(reports.of(List(id))))
+
+  get("/{id}/comparison") { (id: String) =>
+    val a = query.optional[String]("a").getOrElse(throw HttpProblem(422, "name the arm a"))
+    val b = query.optional[String]("b").getOrElse(throw HttpProblem(422, "name the arm b"))
+    reports.comparison(id, a, b)
+  }
+
+  get("/{id}/calibration") { (id: String) =>
+    reports.calibration(
+      id,
+      query.optional[String]("arm").getOrElse(throw HttpProblem(422, "name the arm"))
+    )
+  }
+
   /** The cohort's own events, with each run's recording, in the order they happened. */
   get("/{id}/history") { (id: String) =>
     val own = cohort(id).call(CohortEntity.get).invoke()
@@ -337,4 +358,5 @@ object CohortEndpoint:
   given JsonValueCodec[Cohort]           = Codecs.make
   given JsonValueCodec[Forecasting]      = Codecs.make
   given JsonValueCodec[Scored]           = Codecs.make
-  given JsonValueCodec[List[Happened]]   = Codecs.make
+  export ReportEndpoint.given
+  given JsonValueCodec[List[Happened]] = Codecs.make
