@@ -118,7 +118,7 @@ with what it came from and cannot change.
 
 **Independent Test**: spec.md, User Story 3.
 
-- [ ] T046 [P] [US3] `main/gather/Search.scala` (the port of contracts/ports.md) and `test/support/ScriptedSearch.scala` (results by query, "finds nothing", "fails", results with and without a published time)
+- [X] T046 [P] [US3] `main/gather/Search.scala` (the port of contracts/ports.md) and `test/support/ScriptedSearch.scala` (results by query, "finds nothing", "fails", results with and without a published time)
 - [ ] T047 [P] [US3] `main/domain/Pack.scala`: `PackGathered`, `Document`, and the pure merge of research R12 (by address, interleaved by rank, the venue's own pages left out, cut to the limit, excerpts cut to the limit, and for a pretended time only documents published before it); `test/domain/PackSuite.scala`
 - [ ] T048 [US3] `res/instructions/gatherer-queries/1.md`; `main/gather/Gatherer.scala`: gatherer version `1` (the statement and two queries the cohort's model writes, each search recorded with its result addresses, usage and cost on the pack); `test/gather/GathererSuite.scala` with the scripted search and model
 - [ ] T049 [US3] `main/application/PackEntity.scala` (`ComponentId("pack")`, `gather` once, `get`) and `main/application/views/Packs.scala`; `test/application/PackEntitySuite.scala` (a second `gather` is refused and the pack is as it was)
