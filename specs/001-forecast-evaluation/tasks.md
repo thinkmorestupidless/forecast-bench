@@ -151,7 +151,7 @@ content in two shapes; the report leads with their comparison.
 - [X] T064 [US4] The equality of contracts/arm.md checked when the second of a pair of graph and prose runs is recorded, in `main/application/QuestionForecast.scala`: unequal content fails that run with `the two shapes did not hold the same content`
 - [X] T065 [US4] `GET /cohorts/{id}/appraisals/{question}` in `main/api/CohortEndpoint.scala`
 - [X] T066 [US4] `test/steps/AppraisalFeatures.scala` binds every scenario of `features/arms/appraisal.feature`; `test/steps/ArmsFeatures.scala`, `test/steps/PackFeatures.scala` and `test/steps/RecordFeatures.scala` bind what waited for these arms (no model arm is given the venue's probability; every model arm of a cohort uses the cohort's model; every arm that takes evidence is given the same pack; a run records its cost, its tokens and its latency)
-- [ ] T067 [US4] `test/steps/ReportFeatures.scala` binds: the report leads with the comparison of the graph arm with the prose arm
+- [X] T067 [US4] `test/steps/ReportFeatures.scala` binds: the report leads with the comparison of the graph arm with the prose arm
 
 **Checkpoint**: all five arms forecast a scripted cohort; for every pair of graph and prose runs the content is equal; the scripted reasoning service holds a belief with its reasons.
 
