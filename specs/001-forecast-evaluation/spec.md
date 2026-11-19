@@ -501,6 +501,8 @@ Each is a scenario, or a row of a `Scenario Outline`, named above.
 - The evidence arm reads whole documents and the graph and prose arms read claims drawn from them,
   so evidence against graph measures appraisal plus structure, and only graph against prose
   measures structure alone. The report says so beside those comparisons.
+- For a development cohort the time a model arm is given as the time of the run is the cohort's
+  pretended time; the run itself is still dated the time the bench recorded it.
 - Development cohorts cannot be made safe from a model's knowledge of the outcome. They exist to
   exercise the bench; the pretended time limits what the pack leaks and nothing more.
 - Retrieval by the arm itself, a knowledge graph arm, reasoning history, repeated forecasts over a

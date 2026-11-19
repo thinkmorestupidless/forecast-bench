@@ -79,6 +79,11 @@ asks the cohort entity to reserve the estimated cost; a refusal (`budget spent`,
 records a `RunNotMade` on the cohort and the workflow ends. Step timeout 5 minutes, no automatic
 retry: a failure is a failed run, made again only when the experimenter asks (FR-015).
 
+The budget counts what runs cost. An appraisal's cost is in the cost of each run that reads it
+(FR-027), so a question with both the graph and the prose arm counts it twice against the budget:
+the budget errs towards stopping early, never late. The gatherer's cost is the pack's and is
+outside the budget; the cohort shows it beside what was spent.
+
 Freezing starts the gather steps only (the pack exists when the cohort is frozen, FR-016);
 `POST /cohorts/{id}/forecast` starts the arms.
 
@@ -364,6 +369,28 @@ Requests found while planning, each with what it would remove:
   quotes a venue's probabilities to an investor is another. Read both before the first report
   leaves the machine.
 
+## Declined remediations
+
+*(none)*
+
+## Analysis
+
+2026-11-19, by the session that designed the feature, reading the spec, the plan, the data model,
+the contracts and the tasks against each other and against `features/`. Two findings, both
+remedied without changing a decision or a scenario:
+
+- MEDIUM: the contract gives a model the pretended time as `Now:` for a development cohort, while
+  the spec said only "the time of the run". The spec's assumptions now say so.
+- MEDIUM: nothing said whether the appraisal's and the gatherer's costs count against a cohort's
+  budget. R5 now does.
+
+Coverage: each of the 45 requirements is named by at least one scenario the spec lists (the
+checker's `untraced-requirement` reports none), and each of the 137 scenarios is bound by a task
+(T013, T019, T030 to T032, T038, T039, T045, T053, T055, T066, T067, T069, T070, T072).
+
+This analysis was made by the designer and not by a reader with a fresh context; the review before
+the pull request is the independent one.
+
 ## Found during implementation
 
 *(empty)*
@@ -371,3 +398,7 @@ Requests found while planning, each with what it would remove:
 ## Measurements
 
 *(empty)*
+
+## Design finished
+
+2026-11-19: analyze reported nothing above LOW.
