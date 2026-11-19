@@ -11,7 +11,12 @@ import forecastbench.venues.Venue
  * handed these at construction. They are installed once, before the service starts, by `Main` or by
  * the suites' fixture, and read through `Bench.edges`. One service in a JVM, so one set.
  */
-final case class Edges(clock: Clock, settings: Settings, venues: Map[String, Venue])
+final case class Edges(
+    clock: Clock,
+    settings: Settings,
+    venues: Map[String, Venue],
+    models: Models
+)
 
 object Bench:
 

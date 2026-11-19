@@ -5,8 +5,8 @@ import com.thinkmorestupidless.ankka.runtime.TimerRuntime
 import com.thinkmorestupidless.ankka.sdk.BucketExposure
 import com.thinkmorestupidless.ankka.testkit.AnkkaTestKit
 import forecastbench.BenchService
-import forecastbench.application.{Bench, Edges, Settings}
-import forecastbench.support.{ScriptedVenue, TestClock}
+import forecastbench.application.{Bench, Edges, Models, Settings}
+import forecastbench.support.{ScriptedModel, ScriptedVenue, TestClock}
 
 /**
  * One bench for the test JVM: the service's own components and routes under `AnkkaTestKit`, on a
@@ -28,6 +28,8 @@ object ServiceFixture:
       loaded.models ++ Seq("model-a", "model-b").map(n => n -> entry.copy(name = n, model = n))
     )
 
+  val model: ScriptedModel = ScriptedModel()
+
   val kalshi: ScriptedVenue     = ScriptedVenue("kalshi")
   val polymarket: ScriptedVenue = ScriptedVenue("polymarket")
 
@@ -37,7 +39,14 @@ object ServiceFixture:
     case other        => throw IllegalArgumentException(s"no scripted venue '$other'")
 
   private lazy val started: (AnkkaTestKit, String) =
-    Bench.install(Edges(clock, settings, Map("kalshi" -> kalshi, "polymarket" -> polymarket)))
+    Bench.install(
+      Edges(
+        clock,
+        settings,
+        Map("kalshi" -> kalshi, "polymarket" -> polymarket),
+        Models.all(settings, model)
+      )
+    )
     val server = HttpServer.at("127.0.0.1", 0)(BenchService.endpoints*)
     val kit = AnkkaTestKit.start(
       BenchService.components,

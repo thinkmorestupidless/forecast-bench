@@ -46,7 +46,8 @@ object BenchService:
  * database and every `ANKKA_*` variable.
  */
 @main def run(): Unit =
-  Bench.install(Edges(Clock.system, Settings.load(), venues = Map.empty))
+  val settings = Settings.load()
+  Bench.install(Edges(Clock.system, settings, venues = Map.empty, Models.fromSettings(settings)))
   val timers  = TimerRuntime()
   val builder = Ankka.service.registerAll(BenchService.components)
   val service = BenchService
