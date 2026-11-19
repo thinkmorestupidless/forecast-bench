@@ -36,7 +36,11 @@ Now: <the time of the run, or the pretended time for a development cohort>
 | model-alone | nothing |
 | evidence | `Documents:` then each document of the pack in order: `[n] <source>, <published or "undated">, <address>` and its excerpt |
 | graph | `Case for yes:` the claims that support, each `- [c<n>] <statement>` with `from [n] <source>, <published>: "<the evidence's excerpt>"` beneath; `Case against yes:` the same for the claims that contradict; `Open points:` each as `- <statement>` |
-| prose | one paragraph: for each document in the pack's order, for each of its claims in the order stated, a sentence `According to <source> (<published>), <statement>; this <supports \| contradicts> yes [c<n>], on the words "<excerpt>".`; then `What the evidence does not settle: <open points joined by "; ">.` No headings, no lists, no blank lines. |
+| prose | one paragraph: for each document in the pack's order, for each of its claims in the order stated, a sentence `According to [n] <source> (<published>), <statement>; this <supports \| contradicts> yes [c<n>], on the words "<excerpt>".`; then, when there are open points, `What the evidence does not settle: "<open point>"; "<open point>".` No headings, no lists, no blank lines. |
+
+In both renderings every source, statement, excerpt and open point is written with a backslash, a
+double quote and a line break escaped as `\\`, `\"` and `\n`, so neither text has a line inside a
+field and either can be read back exactly.
 
 The graph and prose texts are both rendered from one `AppraisalContent`:
 
