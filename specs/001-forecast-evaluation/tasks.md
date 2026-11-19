@@ -46,7 +46,7 @@ Paths are from the repository root. `main/` is `src/main/scala/forecastbench/`, 
 **Purpose**: what every story reads: questions held from a venue and cohorts that freeze. No story
 work begins before T019.
 
-- [ ] T008 [P] `main/venues/Venue.scala`: the port and `VenueQuestion`, `VenueFilter`, `VenueReading`, `VenueUnreadable` as contracts/ports.md; `main/venues/VenueProbability.scala`: the rule of research R9 (middle of bid and ask within 0.10, else last, else none) with `test/venues/VenueProbabilitySuite.scala`
+- [X] T008 [P] `main/venues/Venue.scala`: the port and `VenueQuestion`, `VenueFilter`, `VenueReading`, `VenueUnreadable` as contracts/ports.md; `main/venues/VenueProbability.scala`: the rule of research R9 (middle of bid and ask within 0.10, else last, else none) with `test/venues/VenueProbabilitySuite.scala`
 - [ ] T009 [P] `test/support/ScriptedVenue.scala`: a `Venue` the steps fill with open and resolved questions, results, disputes, cancellations and "cannot be read"
 - [ ] T010 [P] `main/domain/Question.scala`: state, `Outcome`, events `QuestionImported`, `QuestionRefreshed`, `OutcomeRead`, and the decisions (standing fixed at first import; an outcome recorded only when it differs, naming the one it revises); `test/domain/QuestionSuite.scala`
 - [ ] T011 `main/application/QuestionEntity.scala` (`ComponentId("question")`, commands `import`, `readOutcome`, query `get`, manifests as data-model.md) with `EventSourcedTestKit` cases in `test/application/QuestionEntitySuite.scala`; `main/application/views/Questions.scala` (row and the queries by venue, standing, domain, waiting)
