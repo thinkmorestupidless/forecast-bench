@@ -16,6 +16,7 @@ final case class Edges(
     settings: Settings,
     venues: Map[String, Venue],
     models: Models,
+    search: forecastbench.gather.Search,
     scoring: Map[Int, forecastbench.report.Scoring.Method] = forecastbench.report.Scoring.methods
 )
 

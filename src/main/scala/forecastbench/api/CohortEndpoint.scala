@@ -111,6 +111,14 @@ final class CohortEndpoint(client: ComponentClient, views: ViewClient)
       .forKeyValueEntity(EntityId(WatchedEntity.Id))
       .call(WatchedEntity.watch)
       .invoke(frozen.questions): Unit
+    frozen.questions.foreach { q =>
+      client
+        .forWorkflow(EntityId(QuestionForecast.id(id, q, 0)))
+        .call(QuestionForecast.start)
+        .invoke(
+          CohortEndpoint.plans(frozen, List((q, "", 0, 0))).head.copy(runs = Nil, gather = true)
+        ): Unit
+    }
     frozen
   }
 
@@ -320,10 +328,10 @@ object CohortEndpoint:
   /** Every set of instructions a cohort with these arms runs. */
   def instructionsFor(arms: List[String]): List[String] =
     val own      = arms.flatMap(Arms.named).flatMap(_.instructions)
-    val evidence = arms.flatMap(Arms.named).exists(_.takesEvidence)
     val appraise = arms.exists(a => a == "graph" || a == "prose")
     (own ++
-      Option.when(evidence)("gatherer-queries") ++
+      // Every frozen cohort gathers (FR-016), so every one fixes the gatherer's queries.
+      Some("gatherer-queries") ++
       Option.when(appraise)("appraisal-reader") ++
       Option.when(appraise)("appraisal-open-points")).distinct
 

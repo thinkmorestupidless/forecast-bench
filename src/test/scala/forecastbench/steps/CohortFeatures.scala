@@ -66,7 +66,21 @@ class CohortFeatures extends FeatureSuite("features/cohorts/cohort.feature") wit
   }
 
   Then("the cohort is as it was frozen") { () =>
-    assertEquals(readCohort(november), json(world.held("frozen")))
+    // What freezing fixes; the packs it then gathers are noted on the cohort as they come.
+    val fixed = List(
+      "questions",
+      "arms",
+      "model",
+      "window",
+      "repetitions",
+      "budget",
+      "status",
+      "instructions",
+      "frozenAt"
+    )
+    val held = readCohort(november)
+    val was  = json(world.held("frozen"))
+    fixed.foreach(k => assertEquals(held(k), was(k), k))
   }
 
   Given("the cohort names a question that closes before the forecast window ends") { () =>

@@ -19,7 +19,9 @@ final case class QuestionPlan(
     pretendedTime: Option[java.time.Instant],
     instructions: Map[String, InstructionRef],
     runs: List[RunPlan],
-    parent: Option[String]
+    parent: Option[String],
+    /** Round 0 of a question, started at freeze: it gathers the pack and makes no run. */
+    gather: Boolean = false
 )
 
 /** What the venue said when the workflow read it: the reading, or why there was none. */
@@ -60,7 +62,9 @@ final class QuestionForecast(context: WorkflowContext) extends Workflow[Question
       val runs  = plan.runs.sortBy(r => (order.indexOf(r.arm), r.repetition))
       effects
         .updateState(currentState.copy(plan = Some(plan), pending = runs))
-        .transitionTo(QuestionForecast.refresh.ref)
+        .transitionTo(
+          if plan.gather then QuestionForecast.gathering.ref else QuestionForecast.refresh.ref
+        )
         .thenReply(Done)
 
   def get: ReadOnlyEffect[QuestionForecastState] = effects.reply(currentState)
@@ -181,6 +185,47 @@ final class QuestionForecast(context: WorkflowContext) extends Workflow[Question
           cohort.call(CohortEntity.settle).invoke(Settle(runId, forecast.cost, now)): Unit
           next(made(run, runId))
 
+  private def packId = Ids.pack(plan.cohort, plan.question)
+
+  private def heldPack: Option[Pack] =
+    client.forEventSourcedEntity(EntityId(packId)).call(PackEntity.get).invoke().pack
+
+  /**
+   * The question's pack (research R12), gathered once: a pack already held is left as it is. The
+   * cohort notes it as gathered, empty, or failed with the reason (FR-016, FR-018).
+   */
+  def gatherStep: StepEffect =
+    if heldPack.isEmpty then
+      val q     = question
+      val edges = Bench.edges
+      val asked =
+        QuestionGiven(q.statement, q.criteria, q.closesAt, plan.pretendedTime.getOrElse(now))
+      val instructions = plan.instructions
+        .get("gatherer-queries")
+        .flatMap(r => Instructions.at("gatherer-queries", r.version))
+        .orElse(Instructions.latest("gatherer-queries"))
+        .get
+      val gathered = forecastbench.gather.Gatherer.gather(
+        forecastbench.gather
+          .Gather(plan.cohort, plan.question, asked, plan.model, plan.pretendedTime, now),
+        edges.models,
+        edges.search,
+        instructions,
+        edges.settings.limits
+      )
+      val note = gathered match
+        case Right(pack) =>
+          try
+            client
+              .forEventSourcedEntity(EntityId(packId))
+              .call(PackEntity.gather)
+              .invoke(pack): Unit
+          catch case e: CommandError if e.code == ErrorCode.Conflict => ()
+          if pack.empty then PackNote.Empty else PackNote.Gathered
+        case Left(why) => PackNote.Failed(why)
+      cohort.call(CohortEntity.notePack).invoke(NotePack(plan.question, note, now)): Unit
+    stepEffects.updateState(currentState).thenTransitionTo(QuestionForecast.finish.ref)
+
   /** Tells the cohort's workflow this question is done, and ends. */
   def finishStep: StepEffect =
     plan.parent.foreach { parent =>
@@ -258,6 +303,7 @@ object QuestionForecast
 
   def create(context: WorkflowContext) = new QuestionForecast(context)
 
+  val gathering  = step("gather")(_.gatherStep)
   val refresh    = step("refresh")(_.refreshStep)
   val venuePrice = step("venue-price")(_.venuePriceStep)
   val model      = step("model-alone")(_.modelStep)

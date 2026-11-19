@@ -62,7 +62,15 @@ object BenchService:
  */
 @main def run(): Unit =
   val settings = Settings.load()
-  Bench.install(Edges(Clock.system, settings, venues = Map.empty, Models.fromSettings(settings)))
+  Bench.install(
+    Edges(
+      Clock.system,
+      settings,
+      venues = Map.empty,
+      Models.fromSettings(settings),
+      forecastbench.gather.NoSearch
+    )
+  )
   val timers  = TimerRuntime()
   val builder = Ankka.service.registerAll(BenchService.components)
   val service = BenchService

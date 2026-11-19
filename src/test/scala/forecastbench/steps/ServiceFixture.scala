@@ -7,7 +7,7 @@ import com.thinkmorestupidless.ankka.testkit.AnkkaTestKit
 import forecastbench.BenchService
 import forecastbench.application.{Bench, Edges, Models, Settings}
 import forecastbench.report.Scoring
-import forecastbench.support.{ScriptedModel, ScriptedVenue, TestClock}
+import forecastbench.support.{ScriptedModel, ScriptedSearch, ScriptedVenue, TestClock}
 
 /**
  * One bench for the test JVM: the service's own components and routes under `AnkkaTestKit`, on a
@@ -31,6 +31,8 @@ object ServiceFixture:
 
   val model: ScriptedModel = ScriptedModel()
 
+  val search: ScriptedSearch = ScriptedSearch()
+
   val kalshi: ScriptedVenue     = ScriptedVenue("kalshi")
   val polymarket: ScriptedVenue = ScriptedVenue("polymarket")
 
@@ -46,6 +48,7 @@ object ServiceFixture:
         settings,
         Map("kalshi" -> kalshi, "polymarket" -> polymarket),
         Models.all(settings, model),
+        search,
         scoring = Scoring.methods + (2 -> Scoring.One.copy(version = 2, logBound = 0.001))
       )
     )
