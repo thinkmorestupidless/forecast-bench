@@ -8,8 +8,6 @@ import forecastbench.support.ScriptedSearch
 class PackFeatures extends FeatureSuite("features/evidence/pack.feature") with PackSteps:
 
   override protected def pending = Set(
-    // T066: the graph and prose arms.
-    "every arm that takes evidence is given the same pack",
     // T070: development cohorts.
     "a development cohort's pack holds only documents published before its pretended time",
     "a development cohort's pack holds no document without a time it was published"
@@ -96,6 +94,7 @@ class PackFeatures extends FeatureSuite("features/evidence/pack.feature") with P
   }
 
   When("the cohort is forecast") { () =>
+    frozenWithArms(Nil)
     world.last = post(s"/cohorts/$november/forecast", "{}")
     ok(world.last): Unit
   }
@@ -163,4 +162,14 @@ class PackFeatures extends FeatureSuite("features/evidence/pack.feature") with P
     val note = gathered()
     assertEquals(note("state").str, "failed")
     assertEquals(note("reason").str, "the search failed: the scripted search is down")
+  }
+
+  Then("each run of those arms for {string} names the same evidence pack") { (name: String) =>
+    awaitRound(november, 1)
+    val runs = recorded(november).filter(_.question == questionId(name))
+    assertEquals(runs.map(_.arm).toSet, Set("evidence", "graph", "prose"))
+    assertEquals(
+      runs.map(_.pack).toSet,
+      Set[Option[String]](Some(Ids.pack(november, questionId(name))))
+    )
   }

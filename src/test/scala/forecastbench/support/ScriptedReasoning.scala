@@ -27,8 +27,19 @@ final class ScriptedReasoning:
   private val down    = AtomicBoolean(false)
   private val sent    = java.util.concurrent.ConcurrentLinkedQueue[(String, String, String)]()
 
+  private val downFor = java.util.concurrent.ConcurrentHashMap.newKeySet[String]()
+
   def unreachable(): Unit = down.set(true)
   def reachable(): Unit   = down.set(false)
+
+  /** Unreachable for every request whose path or body holds the word: one question's records. */
+  def unreachable(word: String): Unit = downFor.add(word): Unit
+  def reachable(word: String): Unit   = downFor.remove(word): Unit
+
+  /** The graph loses a record: it is no longer held or answered. */
+  def forget(kind: String, id: String): Unit =
+    held.remove(kind -> id)
+    when.remove(kind -> id): Unit
 
   /** The next writes to the route (`/claims`) are refused with the rule, until `admit`. */
   def refuse(route: String, rule: String): Unit = refusal.put(route, rule): Unit
@@ -119,7 +130,8 @@ final class ScriptedReasoning:
     val text = String(body, StandardCharsets.UTF_8)
     sent.add((method, path, text))
     val route = path.takeWhile(_ != '?')
-    if down.get then refused(503, "graph.unavailable")
+    if down.get || downFor.asScala.exists(w => path.contains(w) || text.contains(w)) then
+      refused(503, "graph.unavailable")
     else
       Option(refusal.get(route)) match
         case Some(rule) => refused(422, rule)

@@ -7,11 +7,29 @@ import forecastbench.venues.VenueProbability
 
 class ArmsFeatures extends FeatureSuite("features/arms/arms.feature") with PackSteps:
 
-  override protected def pending = Set(
-    // T066: the graph and prose arms.
-    "no model arm is given the venue's probability",
-    "every model arm of a cohort uses the cohort's model"
-  )
+  Then("no model is given the venue's probability") { () =>
+    List("model-alone", "evidence", "graph", "prose").foreach { a =>
+      val texts = requestsOf(a).map(r => ScriptedModel.text(r))
+      assert(texts.nonEmpty, s"the arm $a was not given anything")
+      texts.foreach { t =>
+        List("0.48", "0.52", "kalshi", "polymarket", world.venueId("rates")).foreach(v =>
+          assert(!t.contains(v), s"the arm $a was given '$v': $t")
+        )
+      }
+    }
+  }
+
+  When("the cohort is forecast") { () =>
+    frozenWithArms(Nil)
+    world.last = forecastAndWait(november)
+    ok(world.last): Unit
+  }
+
+  Then("each run names the model {string}") { (model: String) =>
+    val runs = recorded(november)
+    assertEquals(runs.map(_.arm).toSet, Set("model-alone", "evidence", "graph", "prose"))
+    runs.foreach(r => assertEquals(r.model, Some(model), r.id))
+  }
 
   Then("the model is given what the model-alone arm is given and every document of the pack") {
     () =>

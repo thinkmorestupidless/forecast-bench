@@ -40,11 +40,61 @@ trait ModelSteps extends CohortSetup:
     world.last = forecastBy(words, name)
   }
 
-  /** Adds the arm to the background's cohort and freezes it, unless a step already has. */
-  protected def frozenWith(words: String): Unit =
-    if readCohort(november)("status").str == "drafted" then
-      ok(post(s"/cohorts/$november/arms", s"""{"arms":["${arm(words)}"]}""")): Unit
+  protected def drafted: Boolean = readCohort(november)("status").str == "drafted"
+
+  /** Adds the arms to the background's cohort, while it is drafted. */
+  protected def names(words: List[String]): Unit =
+    val named = readCohort(november)("arms").arr.map(_.str).toSet
+    val add   = words.map(arm).filterNot(named)
+    if drafted && add.nonEmpty then
+      val arms = add.map(a => s""""$a"""").mkString(",")
+      ok(post(s"/cohorts/$november/arms", s"""{"arms":[$arms]}""")): Unit
+
+  /** Adds the arms to the background's cohort and freezes it, unless a step already has. */
+  protected def frozenWithArms(words: List[String]): Unit =
+    if drafted then
+      names(words)
       freeze(november): Unit
+
+  protected def frozenWith(words: String): Unit = frozenWithArms(List(words))
+
+  Given("the cohort names the arms {string} and {string}")((a: String, b: String) =>
+    names(List(a, b))
+  )
+
+  Given("the cohort names the arms {string}, {string} and {string}") {
+    (a: String, b: String, c: String) =>
+      names(List(a, b, c))
+  }
+
+  Given("the cohort names the arms {string}, {string}, {string} and {string}") {
+    (a: String, b: String, c: String, d: String) => names(List(a, b, c, d))
+  }
+
+  When("the arms {string} and {string} forecast {string}") { (a: String, b: String, q: String) =>
+    questionId(q): Unit
+    frozenWithArms(List(a, b))
+    world.last = forecastAndWait(november)
+    ok(world.last): Unit
+  }
+
+  When("the arms {string}, {string}, {string} and {string} forecast {string}") {
+    (a: String, b: String, c: String, d: String, q: String) =>
+      questionId(q): Unit
+      frozenWithArms(List(a, b, c, d))
+      world.last = forecastAndWait(november)
+    ok(world.last): Unit
+  }
+
+  /** The forecasting requests of the scenario made by one arm, by its instructions. */
+  protected def requestsOf(
+      armName: String
+  ): Vector[com.thinkmorestupidless.ankka.agent.ModelRequest] =
+    val text = forecastbench.application.Instructions.latest(armName).map(_.text)
+    fixture.model.requests(key).filter(_.systemMessage == text)
+
+  protected def userText(r: com.thinkmorestupidless.ankka.agent.ModelRequest): String =
+    ScriptedModel.text(r.copy(systemMessage = None))
 
   /** The arm forecasts the background's question: added, frozen and forecast. */
   protected def forecastBy(words: String, name: String): (Int, String) =

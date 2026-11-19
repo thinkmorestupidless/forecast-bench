@@ -7,11 +7,6 @@ import java.time.Duration
 
 class RecordFeatures extends FeatureSuite("features/runs/record.feature") with PackSteps:
 
-  override protected def pending = Set(
-    // T066: the graph arm.
-    "a run records its cost, its tokens and its latency"
-  )
-
   When("the experimenter reads the run") { () => world.last = get(runPath) }
 
   Then(
@@ -153,4 +148,17 @@ class RecordFeatures extends FeatureSuite("features/runs/record.feature") with P
     val run    = lines.indexWhere(_._2.startsWith(s"run ${only.id} recorded"))
     assert(frozen >= 0 && run > frozen, lines.mkString("\n"))
     assert(only.ending.isInstanceOf[Ending.Forecast])
+  }
+
+  Then("the run records its cost, its tokens and its latency") { () =>
+    val run   = json(ok(world.last))("run")
+    val usage = run("usage")
+    assert(usage("inputTokens").num > 0 && usage("outputTokens").num > 0, usage.toString)
+    assert(run("latencyMs").num >= 0, run.toString)
+    // The model's cost and, for an arm that reads the appraisal, its share of it.
+    val own = forecastbench.application.Models
+      .all(fixture.settings, fixture.model)
+      .cost("model-a", only.usage.get)
+    assert(only.appraisalShare > 0, only.toString)
+    assertEquals(BigDecimal(run("cost").num), own + only.appraisalShare)
   }
