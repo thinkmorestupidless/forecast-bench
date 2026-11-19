@@ -190,7 +190,7 @@ content in two shapes; the report leads with their comparison.
 ## Phase 9: Polish
 
 - [X] T080 [P] `CLAUDE.md`: what the repository is, the three rules (nothing changes a frozen cohort or a run; no model arm sees the venue's probability; a development figure never enters a prospective report), how to run and test, a dated traps section with what this feature met
-- [ ] T081 [P] `README.md` (what the bench is for, the five arms, how to run a cohort, where the spec and the features are) and `docs/limitations.md` (two outcomes only; one experimenter; one forecast for each repetition; the appraisal is a model's; development cohorts show nothing; venues' terms; what is unproven)
+- [X] T081 [P] `README.md` (what the bench is for, the five arms, how to run a cohort, where the spec and the features are) and `docs/limitations.md` (two outcomes only; one experimenter; one forecast for each repetition; the appraisal is a model's; development cohorts show nothing; venues' terms; what is unproven)
 - [ ] T082 [P] `notes/ankka-requests.md` and `notes/reasoning-requests.md` from research R16 and what implementation found, each with what it would remove
 - [ ] T083 `sbt scalafmtCheckAll compile test` warning-free and green; `just check` at 0 findings; the task ticks, and the scenario count in the checker's output equal to the number of tests the feature suites ran
 
