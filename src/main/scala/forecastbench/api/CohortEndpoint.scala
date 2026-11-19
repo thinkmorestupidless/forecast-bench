@@ -168,6 +168,16 @@ final class CohortEndpoint(client: ComponentClient, views: ViewClient)
 
   get("/{id}")((id: String) => read(id))
 
+  /** The cohort's own events, with each run's recording, in the order they happened. */
+  get("/{id}/history") { (id: String) =>
+    val own = cohort(id).call(CohortEntity.get).invoke()
+    if own.cohort.isEmpty then Refusals.notFound(s"no cohort '$id'")
+    val runs = Runs
+      .of(views, Some(id), None, None)
+      .map(r => Happened(r.run.recordedAt, s"run ${r.run.id} recorded, ${r.run.ending.word}"))
+    (own.history ++ runs).sortBy(_.at)
+  }
+
   private def read(id: String): Cohort =
     cohort(id)
       .call(CohortEntity.get)
@@ -287,3 +297,4 @@ object CohortEndpoint:
   given JsonValueCodec[FreezeRequest]    = Codecs.make
   given JsonValueCodec[Cohort]           = Codecs.make
   given JsonValueCodec[Forecasting]      = Codecs.make
+  given JsonValueCodec[List[Happened]]   = Codecs.make

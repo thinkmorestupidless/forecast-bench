@@ -38,7 +38,8 @@ object BenchService:
   def endpoints: Seq[EndpointClients => HttpEndpoint] = Seq(
     clients => VenueEndpoint(clients.componentClient),
     clients => QuestionEndpoint(clients.componentClient, clients.viewClient),
-    clients => CohortEndpoint(clients.componentClient, clients.viewClient)
+    clients => CohortEndpoint(clients.componentClient, clients.viewClient),
+    clients => RunEndpoint(clients.componentClient, clients.viewClient, clients.storage)
   )
 
   /** The extensions of a service, in the order they start. */
