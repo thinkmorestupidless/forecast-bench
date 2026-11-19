@@ -1,5 +1,6 @@
 package forecastbench.domain
 
+import forecastbench.application.Instructions
 import java.time.Instant
 
 class ArmsSuite extends munit.FunSuite:
@@ -50,3 +51,42 @@ class ArmsSuite extends munit.FunSuite:
       Left(Abstain("there was no evidence"))
     )
     assertEquals(Arms.evidence.`given`(q, None, None), Left(Abstain("there was no evidence")))
+
+  test("the graph and prose arms are given one content in two shapes, and abstain without it"):
+    val now = java.time.Instant.parse("2027-01-04T09:00:00Z")
+    val q =
+      QuestionGiven("Will rates fall?", "Resolves yes if they fall.", now.plusSeconds(86400), now)
+    val doc  = Document(1, "news.example", "https://news.example/1", Some(now), "Rates held.", "t")
+    val pack = Pack("c", "q", 1, now, Nil, List(doc), Usage.zero, BigDecimal(0))
+    val c = AppraisalContent(
+      List(
+        ClaimGiven(
+          "c1",
+          "Rates held",
+          Stance.Contradicts,
+          1,
+          "news.example",
+          Some(now),
+          "Rates held."
+        )
+      ),
+      List("When")
+    )
+    val g = Arms.graph.`given`(q, Some(pack), Some(c)).toOption.get.user
+    val p = Arms.prose.`given`(q, Some(pack), Some(c)).toOption.get.user
+    assertEquals(g, Shape.graph(q, c))
+    assertEquals(p, Shape.prose(q, c))
+    assertEquals(Shape.contentOf(g), Shape.contentOf(p))
+    assertEquals(Arms.graph.`given`(q, Some(pack), None), Left(Abstain("the appraisal failed")))
+    assertEquals(
+      Arms.prose.`given`(q, Some(pack.copy(documents = Nil)), Some(c)),
+      Left(Abstain("there was no evidence"))
+    )
+
+  test(
+    "the graph and prose instructions differ in the one sentence that says how the material is laid out"
+  ):
+    val g = Instructions.latest("graph").get.text.linesIterator.toList
+    val p = Instructions.latest("prose").get.text.linesIterator.toList
+    assertEquals(g.size, p.size)
+    assertEquals(g.zip(p).count(_ != _), 1)

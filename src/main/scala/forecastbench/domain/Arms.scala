@@ -44,7 +44,26 @@ object Arms:
             Given("", Arm.block(q) + "\nDocuments:\n" + p.documents.map(document).mkString("\n"))
           )
 
-  val all: List[Arm] = List(venuePrice, modelAlone, evidence)
+  val AppraisalFailed = "the appraisal failed"
+
+  /**
+   * An arm that reads the appraisal: the block, then the appraisal's content in the arm's shape.
+   * Both are rendered from the one `AppraisalContent`, read back from the graph (research R8).
+   */
+  private def appraised(armName: String, render: (QuestionGiven, AppraisalContent) => String): Arm =
+    new Arm:
+      val name          = armName
+      val takesEvidence = true
+      val usesModel     = true
+      val instructions  = Some(armName)
+      def `given`(q: QuestionGiven, pack: Option[Pack], appraisal: Option[AppraisalContent]) =
+        if pack.forall(_.empty) then Left(Abstain(NoEvidence))
+        else appraisal.fold(Left(Abstain(AppraisalFailed)))(c => Right(Given("", render(q, c))))
+
+  val graph: Arm = appraised("graph", Shape.graph)
+  val prose: Arm = appraised("prose", Shape.prose)
+
+  val all: List[Arm] = List(venuePrice, modelAlone, evidence, graph, prose)
 
   def named(name: String): Option[Arm] = all.find(_.name == name)
 

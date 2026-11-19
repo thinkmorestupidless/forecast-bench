@@ -59,7 +59,7 @@ object Appraiser:
   ): Either[AppraisalFailed, AppraisalMade] =
     var usage = Usage.zero
     var cost  = BigDecimal(0)
-    def failed(reason: String, naming: Option[String] = None) =
+    def failed(reason: String, naming: Option[String]) =
       AppraisalFailed(reason, naming, usage, cost, a.now)
 
     def ask(system: String, user: String): Either[String, String] =
