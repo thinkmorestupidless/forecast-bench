@@ -37,6 +37,9 @@ only as far as this bench says.
 - Q: Where does a question's evidence pack come from? → A: Gathered by search when the cohort is frozen, by a versioned gatherer, then never changed.
 - Q: How does the graph arm arrive at its probability so that it differs from its control only in structure? → A: One shared appraisal, two readings. The appraisal reads the pack once and records claims with stances, and open points. The graph arm's model is given the case for, the case against and the open points; the prose arm's model is given the same claims, documents and open points as one passage. The graph arm's forecast is held in the reasoning service as a belief resting on its reasons.
 - Q: How often does an arm forecast a question? → A: Once for each repetition in a cohort. The same question may be in a later cohort with a fresh pack.
+- Q: Do the proposed glossary terms stand? → A: All of them. Claim, stance, hypothesis, belief and "derives from" are used in the reasoning service's sense.
+- Q: What is the headline measure for the graph arm against the prose arm? → A: The mean difference of their Brier scores, question by question, with its interval. It is fixed before any forecast; the log score and the calibration tables are reported beside it as supporting figures and never lead.
+- Q: Do the standings of a comparison stand at thirty and a hundred? → A: Yes: under thirty `too few` with no difference given, thirty to ninety-nine `preliminary`, a hundred or more `counted`.
 
 ## User Scenarios & Testing *(mandatory)*
 
@@ -407,8 +410,10 @@ Each is a scenario, or a row of a `Scenario Outline`, named above.
   ninety-nine, and `counted` from a hundred.
 - **FR-039**: A comparison MUST say one arm is better only when its interval leaves out nought, and
   otherwise that no difference is shown.
-- **FR-040**: A report MUST lead with the comparison of the graph arm with the prose arm and then
-  compare every other pair of the cohort's arms.
+- **FR-040**: A report MUST lead with the comparison of the graph arm with the prose arm, by the
+  mean difference of their Brier scores, which is the headline measure and is fixed before any
+  forecast; it MUST then compare every other pair of the cohort's arms. The log score and the
+  calibration tables support the headline and never replace it.
 - **FR-041**: A report MUST give each arm a calibration table of ten bands of equal width, each
   with its count, mean forecast, how often the outcome was yes and the interval of that, a band
   with fewer than ten forecasts marked `too few`.
