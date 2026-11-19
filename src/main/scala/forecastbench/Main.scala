@@ -26,7 +26,9 @@ object BenchService:
   def components: Seq[ComponentDescriptor] = Seq(
     QuestionEntity.descriptor,
     Questions.descriptor,
-    DomainsEntity.descriptor
+    DomainsEntity.descriptor,
+    CohortEntity.descriptor,
+    Cohorts.descriptor
   )
 
   def endpoints: Seq[EndpointClients => HttpEndpoint] = Seq(
