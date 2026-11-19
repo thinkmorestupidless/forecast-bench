@@ -2,16 +2,10 @@ package forecastbench.steps
 
 import com.thinkmorestupidless.ankka.core.{CommandError, EntityId, ErrorCode}
 import forecastbench.application.PackEntity
-import forecastbench.domain.{Ending, Ids, Pack}
+import forecastbench.domain.{Ending, Ids, OutcomeValue, Pack}
 import forecastbench.support.ScriptedSearch
 
 class PackFeatures extends FeatureSuite("features/evidence/pack.feature") with PackSteps:
-
-  override protected def pending = Set(
-    // T070: development cohorts.
-    "a development cohort's pack holds only documents published before its pretended time",
-    "a development cohort's pack holds no document without a time it was published"
-  )
 
   /**
    * Drafted with its question and the evidence arm; frozen, which gathers, by the first step that
@@ -172,4 +166,56 @@ class PackFeatures extends FeatureSuite("features/evidence/pack.feature") with P
       runs.map(_.pack).toSet,
       Set[Option[String]](Some(Ids.pack(november, questionId(name))))
     )
+  }
+
+  private def day(d: String): java.time.Instant = java.time.Instant.parse(s"${d}T00:00:00Z")
+
+  /**
+   * Drafted with a development question and the evidence arm; frozen once the search is scripted.
+   */
+  Given("a frozen development cohort {string} with the pretended time {string}") {
+    (name: String, pretended: String) =>
+      val id = draft(name, standing = "development", pretended = Some(day(pretended)))
+      settle(
+        id,
+        List(importedQuestion("rehearsed", resolved = Some(OutcomeValue.Yes))),
+        List("evidence")
+      )
+      world.held("dev") = id
+      world.held("pretended") = pretended
+  }
+
+  /**
+   * The pack of the development cohort, gathered with what the search finds and one earlier
+   * document.
+   */
+  private def devPack(late: forecastbench.gather.SearchResult): ujson.Value =
+    val early = ScriptedSearch.result(
+      s"https://early.example/${world.n}",
+      Some(day(world.held("pretended")).minus(java.time.Duration.ofDays(10)))
+    )
+    fixture.search.finds(key, List(late, early))
+    world.held("late") = late.address
+    val dev = world.held("dev")
+    freeze(dev): Unit
+    eventually("the pack to be noted")(readCohort(dev)("packs").obj.get(questionId("rehearsed")))
+    // Every search was asked for what was published before the pretended time.
+    assert(fixture.search.asked(key).nonEmpty)
+    assert(fixture.search.asked(key).forall(_._2.contains(day(world.held("pretended")))))
+    json(ok(get(s"/cohorts/$dev/packs/${questionId("rehearsed")}")))
+
+  When("the search finds a document published on {string}") { (d: String) =>
+    world.held("pack") =
+      ujson.write(devPack(ScriptedSearch.result(s"https://late.example/${world.n}", Some(day(d)))))
+  }
+
+  When("the search finds a document with no time it was published") { () =>
+    world.held("pack") =
+      ujson.write(devPack(ScriptedSearch.result(s"https://undated.example/${world.n}", None)))
+  }
+
+  Then("that document is not in the pack") { () =>
+    val addresses = json(world.held("pack"))("documents").arr.map(_("address").str).toList
+    assertEquals(addresses, List(s"https://early.example/${world.n}"))
+    assert(!addresses.contains(world.held("late")))
   }
