@@ -106,7 +106,7 @@ with what it came from and cannot change.
 - [X] T042 [US2] `main/report/Report.scala`: the value of data-model.md built from run rows, questions and cohorts (arm figures with counts of runs by ending, cost, tokens, latency; comparisons with graph and prose first where both are named; calibration; by domain and by horizon with the horizon's bounds; scored, waiting, void and disputed; `nothing is known yet`; the notes on what each comparison measures); `test/report/ReportSuite.scala` against a fixture of fifty questions worked by hand to four places (SC-004), and that the same input gives the same figures
 - [X] T043 [P] [US2] `main/report/Markdown.scala`: the report as a page, every figure with its count, every comparison with its interval and standing, a "not yet known" section; `test/report/MarkdownSuite.scala` (no difference is printed for `too few`)
 - [X] T044 [US2] `main/api/ReportEndpoint.scala`: `GET /cohorts/{id}/report`, `/report.md`, `/comparison`, `/calibration`, `GET /reports`, `/reports.md`
-- [ ] T045 [US2] `test/steps/ReportFeatures.scala` binds every scenario of `features/reports/report.feature` but the two of development cohorts (T072) and the one that leads with graph and prose (T067); the steps seed runs and outcomes through the routes and the scripted venue
+- [X] T045 [US2] `test/steps/ReportFeatures.scala` binds every scenario of `features/reports/report.feature` but the two of development cohorts (T072) and the one that leads with graph and prose (T067); the steps seed runs and outcomes through the routes and the scripted venue
 
 **Checkpoint**: on a forecast cohort, resolving questions at the scripted venue gives scores and a report whose figures match the hand-worked fixture.
 
