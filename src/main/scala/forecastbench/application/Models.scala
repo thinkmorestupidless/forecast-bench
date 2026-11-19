@@ -50,3 +50,15 @@ object Models:
   /** One provider for every model: a test's scripted model. */
   def all(settings: Settings, provider: ModelProvider): Models =
     Models(settings.models, settings.models.map((name, _) => name -> MeteredProvider(provider)))
+
+/** What a run is reckoned to cost before its model is called, to reserve against the budget. */
+object Estimate:
+  /** About three characters to a token; the answer reckoned at two thousand tokens. */
+  val CharactersPerToken = 3
+  val AnswerTokens       = 2000L
+
+  def of(models: Models, model: String, text: String): BigDecimal =
+    models.cost(
+      model,
+      forecastbench.domain.Usage(text.length.toLong / CharactersPerToken + 1, AnswerTokens)
+    )
