@@ -209,6 +209,20 @@ final class CohortEndpoint(client: ComponentClient, views: ViewClient)
       }
   }
 
+  /** A question's appraisal in the cohort, made or failed; 404 before it is held. */
+  get("/{id}/appraisals/{question}") { (id: String, question: String) =>
+    read(id): Unit
+    val held = appraisal(id, question)
+    if !held.held then Refusals.notFound(s"no appraisal for '$question' in '$id'")
+    held
+  }
+
+  private def appraisal(cohort: String, question: String): AppraisalState =
+    client
+      .forEventSourcedEntity(EntityId(Ids.appraisal(cohort, question)))
+      .call(AppraisalEntity.get)
+      .invoke()
+
   private val reports = Reports(client, views)
 
   get("/{id}/report") { (id: String) =>
@@ -237,8 +251,16 @@ final class CohortEndpoint(client: ComponentClient, views: ViewClient)
     val runs = recorded(own.cohort.get).map(r =>
       Happened(r.recordedAt, s"run ${r.id} recorded, ${r.ending.word}")
     )
+    val appraisals = own.cohort.get.questions.flatMap { q =>
+      val a = appraisal(id, q)
+      a.made
+        .map(m => Happened(m.madeAt, s"appraisal of $q made, ${m.claims.size} claims"))
+        .orElse(
+          a.failed.map(f => Happened(f.at, s"appraisal of $q failed: ${f.reason}"))
+        )
+    }
     // A stable sort: what happened at one instant keeps the order it was written in.
-    (own.history ++ runs).sortBy(_.at)
+    (own.history ++ appraisals ++ runs).sortBy(_.at)
   }
 
   /**
@@ -385,5 +407,6 @@ object CohortEndpoint:
   given JsonValueCodec[Forecasting]      = Codecs.make
   given JsonValueCodec[Scored]           = Codecs.make
   given JsonValueCodec[Pack]             = Codecs.make
+  given JsonValueCodec[AppraisalState]   = Codecs.make
   export ReportEndpoint.given
   given JsonValueCodec[List[Happened]] = Codecs.make
