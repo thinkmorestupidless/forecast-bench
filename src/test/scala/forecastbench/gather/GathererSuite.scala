@@ -42,7 +42,7 @@ class GathererSuite extends munit.FunSuite:
   test("the queries are written from the question as an arm is given it, nothing else"):
     val m = ScriptedModel()
     gather(m, ScriptedSearch()): Unit
-    val r = m.requests("[#g]").head
+    val r = m.queryRequests("[#g]").head
     assertEquals(r.systemMessage, Some(instructions.text))
     assertEquals(ScriptedModel.text(r.copy(systemMessage = None)), Arm.block(asked))
 

@@ -5,14 +5,65 @@ import forecastbench.support.ScriptedModel
 
 import java.time.Duration
 
-class RecordFeatures extends FeatureSuite("features/runs/record.feature") with ModelSteps:
+class RecordFeatures extends FeatureSuite("features/runs/record.feature") with PackSteps:
 
   override protected def pending = Set(
-    // T055, T066: the evidence and graph arms.
-    "a run is recorded with everything its answer came from",
-    "a run records its cost, its tokens and its latency",
-    "a run can be made again from its record without touching it"
+    // T066: the graph arm.
+    "a run records its cost, its tokens and its latency"
   )
+
+  When("the experimenter reads the run") { () => world.last = get(runPath) }
+
+  Then(
+    "the run names its cohort, its question, its arm, its repetition, its model, the version of its instructions and its evidence pack"
+  ) { () =>
+    val run = json(ok(world.last))("run")
+    assertEquals(run("cohort").str, november)
+    assertEquals(run("question").str, questionId("rates"))
+    assertEquals(run("arm").str, "evidence")
+    assertEquals(run("repetition").num.toInt, 1)
+    assertEquals(run("model").str, "model-a")
+    assertEquals(run("instructions")("version").num.toInt, 1)
+    assertEquals(run("pack").str, forecastbench.domain.Ids.pack(november, questionId("rates")))
+    ok(get(packPath)): Unit
+  }
+
+  Then(
+    "the run holds exactly what the model was given, what the model answered, its forecast and the time it was recorded"
+  ) { () =>
+    val read    = json(ok(world.last))
+    val request = fixture.model.requests(key).last
+    val kept    = forecastbench.domain.Given.parse(read("given").str).get
+    assertEquals(Some(kept.system), request.systemMessage)
+    assertEquals(kept.user, lastUserText)
+    assertEquals(read("answered").str, ScriptedModel.forecast(0.5))
+    assertEquals(read("intact").bool, true)
+    assertEquals(only.ending, Ending.Forecast(0.5))
+    assertEquals(only.recordedAt, fixture.clock.now)
+  }
+
+  When("the experimenter reproduces the run") { () =>
+    world.held("run") = ok(get(runPath))
+    world.held("asked") = fixture.model.requests(key).size.toString
+    world.last = post(s"$runPath/reproduce", "{}")
+  }
+
+  Then("the model is given exactly what the run holds it was given") { () =>
+    ok(world.last): Unit
+    val requests = fixture.model.requests(key)
+    assertEquals(requests.size, world.held("asked").toInt + 1)
+    val kept = forecastbench.domain.Given.parse(json(world.held("run"))("given").str).get
+    assertEquals(requests.last.systemMessage, Some(kept.system))
+    assertEquals(ScriptedModel.text(requests.last.copy(systemMessage = None)), kept.user)
+  }
+
+  Then("the answer is shown beside the run and is not recorded as a run") { () =>
+    val shown = json(ok(world.last))
+    assertEquals(shown("answered").str, ScriptedModel.forecast(0.5))
+    assertEquals(shown("probability").num, 0.5)
+    assertEquals(recorded(november).size, 1)
+    assertEquals(json(ok(get(runPath))), json(world.held("run")))
+  }
 
   private def runPath = s"/runs/${only.id}"
 

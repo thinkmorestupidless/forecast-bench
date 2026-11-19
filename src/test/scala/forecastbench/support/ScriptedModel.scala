@@ -37,7 +37,15 @@ final class ScriptedModel extends ModelProvider:
 
   /** Every request whose text holds `word`, in the order they came. */
   def requests(word: String): Vector[ModelRequest] =
-    seen.asScala.toVector.filter(r => ScriptedModel.text(r).contains(word))
+    seen.asScala.toVector.filter(r =>
+      !ScriptedModel.writesQueries(r) && ScriptedModel.text(r).contains(word)
+    )
+
+  /** Every request for the gatherer's queries whose text holds `word`. */
+  def queryRequests(word: String): Vector[ModelRequest] =
+    seen.asScala.toVector.filter(r =>
+      ScriptedModel.writesQueries(r) && ScriptedModel.text(r).contains(word)
+    )
 
   def complete(request: ModelRequest): Future[ModelResponse] =
     seen.add(request)

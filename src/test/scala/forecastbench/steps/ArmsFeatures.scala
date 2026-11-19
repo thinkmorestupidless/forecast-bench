@@ -5,15 +5,38 @@ import forecastbench.domain.{Arm, Ending, Ids}
 import forecastbench.support.ScriptedModel
 import forecastbench.venues.VenueProbability
 
-class ArmsFeatures extends FeatureSuite("features/arms/arms.feature") with ModelSteps:
+class ArmsFeatures extends FeatureSuite("features/arms/arms.feature") with PackSteps:
 
   override protected def pending = Set(
-    // T055, T066: the arms that read evidence.
+    // T066: the graph and prose arms.
     "no model arm is given the venue's probability",
-    "the evidence arm is given what the model-alone arm is given and the evidence pack",
-    "every model arm of a cohort uses the cohort's model",
-    "a model arm's instructions are named by version in each run"
+    "every model arm of a cohort uses the cohort's model"
   )
+
+  Then("the model is given what the model-alone arm is given and every document of the pack") {
+    () =>
+      val request = fixture.model.requests(key).last
+      val user    = lastUserText
+      val pack    = json(ok(get(packPath)))
+      val docs    = pack("documents").arr.toList
+      assert(docs.nonEmpty)
+      // The model-alone arm's four lines, then the documents, in the pack's order.
+      val asked = user.linesIterator.take(4).toList
+      assert(asked.head.startsWith(s"Question: ${statement("rates")}"), user)
+      assert(asked(3).startsWith("Now: "), user)
+      val after = user.linesIterator.drop(4).toList
+      assertEquals(after.head, "Documents:")
+      val places = docs.map(d => user.indexOf(d("address").str))
+      assert(places.forall(_ > 0) && places == places.sorted, user)
+      docs.foreach(d => assert(user.contains(d("excerpt").str), user))
+      assertEquals(request.systemMessage, Instructions.at("evidence", 1).map(_.text))
+  }
+
+  Then("the run names the version of the arm's instructions") { () =>
+    assertEquals(only.instructions, Instructions.at("evidence", 1).map(_.ref))
+    val read = json(ok(get(s"/runs/${only.id}")))("run")
+    assertEquals(read("instructions")("version").num.toInt, 1)
+  }
 
   Given("a drafted cohort {string}")((name: String) => draft(name): Unit)
 

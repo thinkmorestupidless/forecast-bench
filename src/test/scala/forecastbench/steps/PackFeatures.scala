@@ -5,7 +5,7 @@ import forecastbench.application.PackEntity
 import forecastbench.domain.{Ending, Ids, Pack}
 import forecastbench.support.ScriptedSearch
 
-class PackFeatures extends FeatureSuite("features/evidence/pack.feature") with ModelSteps:
+class PackFeatures extends FeatureSuite("features/evidence/pack.feature") with PackSteps:
 
   override protected def pending = Set(
     // T066: the graph and prose arms.
@@ -24,15 +24,6 @@ class PackFeatures extends FeatureSuite("features/evidence/pack.feature") with M
       settle(draft(name), List(importedQuestion(question)), List("evidence"))
   }
 
-  private def packPath = s"/cohorts/$november/packs/${questionId("rates")}"
-
-  /** Freezes the cohort, if a step has not, and waits for the cohort to note the pack. */
-  private def gathered(): ujson.Value =
-    frozenWith("evidence")
-    eventually("the pack to be noted") {
-      readCohort(november)("packs").obj.get(questionId("rates"))
-    }
-
   When("the gatherer has finished")(() => gathered(): Unit)
 
   Then("the question {string} has one evidence pack in the cohort {string}") {
@@ -40,10 +31,6 @@ class PackFeatures extends FeatureSuite("features/evidence/pack.feature") with M
       val pack = json(ok(get(s"/cohorts/${world.cohort(c)}/packs/${questionId(q)}")))
       assertEquals(pack("question").str, questionId(q))
       assertEquals(readCohort(november)("packs").obj.keys.toList, List(questionId(q)))
-  }
-
-  Given("the question {string} has an evidence pack") { (_: String) =>
-    assertEquals(gathered()("state").str, "gathered")
   }
 
   When("the experimenter reads the documents of the pack") { () => world.last = get(packPath) }

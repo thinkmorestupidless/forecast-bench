@@ -8,12 +8,87 @@ class ScoreFeatures
     with ModelSteps
     with OutcomeSteps:
 
-  override protected def pending = Set(
-    // T055: an arm's forecast over repetitions is read for the evidence arm.
-    "an arm's forecast for a question is the mean of its repetitions",
-    "an arm's forecast for a question uses only the repetitions that gave a forecast",
-    "an arm with no forecast for a question has no score for it"
-  )
+  /**
+   * The arm's repetitions of the background's question, answered in turn: its runs are made one
+   * after another, so the answers come in the order they are listed.
+   */
+  private def repetitions(words: String, answers: List[Either[String, Double]]): Unit =
+    val next = java.util.concurrent.atomic.AtomicInteger(0)
+    fixture.model.when(key) { _ =>
+      answers(next.getAndIncrement() min (answers.size - 1)) match
+        case Left(reply) =>
+          Right(
+            com.thinkmorestupidless.ankka.agent.ModelResponse(reply, usage = ScriptedModel.Usage)
+          )
+        case Right(p) =>
+          Right(
+            com.thinkmorestupidless.ankka.agent
+              .ModelResponse(ScriptedModel.forecast(p), usage = ScriptedModel.Usage)
+          )
+    }
+    ok(put(s"/cohorts/$november", s"""{"repetitions":${answers.size}}""")): Unit
+    ok(forecastBy(words, "rates")): Unit
+    assertEquals(recorded(november).size, answers.size)
+    // The runs are in the view the report reads before a scenario reads the report.
+    eventually("the runs to be listed") {
+      Option.when(json(ok(get(s"/runs?cohort=$november"))).arr.size == answers.size)(())
+    }
+
+  Given(
+    "the arm {string} has runs for {string} with the forecasts {string}, {string} and {string}"
+  ) { (words: String, _: String, a: String, b: String, c: String) =>
+    repetitions(words, List(a, b, c).map(p => Right(p.toDouble)))
+  }
+
+  Given(
+    "the arm {string} has runs for {string} with the forecasts {string} and {string} and one failed run"
+  ) { (words: String, _: String, a: String, b: String) =>
+    repetitions(words, List(Right(a.toDouble), Right(b.toDouble), Left("I would rather not say.")))
+    assertEquals(recorded(november).count(_.ending.word == "failed"), 1)
+  }
+
+  Given("every run of the arm {string} for {string} abstained") { (words: String, _: String) =>
+    val abstain =
+      """{"probability": null, "abstain": "nothing here can be known", "reasons": [], "rationale": "x"}"""
+    repetitions(words, List.fill(3)(Left(abstain)))
+    assert(recorded(november).forall(_.ending.word == "abstained"))
+  }
+
+  /** The report's figure for the arm and the background's question, once its outcome is scored. */
+  private def figure(name: String): ujson.Value =
+    eventually("the arm's figure to be scored") {
+      json(ok(get(s"/cohorts/$november/report")))("perQuestion").arr.find(f =>
+        f("question").str == questionId(name) && f("arm").str == "evidence" && !f("brier").isNull
+      )
+    }
+
+  Then("the arm's forecast for {string} is {string}") { (name: String, p: String) =>
+    assertEqualsDouble(figure(name)("forecast").num, p.toDouble, 1e-9)
+  }
+
+  Then("the arm's Brier score for {string} is {string}") { (name: String, b: String) =>
+    assertEquals(r4(figure(name)("brier").num), b.toDouble)
+  }
+
+  Then("the spread of the repetitions is kept beside it") { () =>
+    val f = figure("rates")
+    assertEquals(f("repetitions").num.toInt, 3)
+    assertEqualsDouble(f("spread").num, 0.1, 1e-9)
+  }
+
+  Then("the arm has no score for {string}") { (name: String) =>
+    eventually("the outcome to be read") {
+      Option.when(json(ok(get(s"/questions/${questionId(name)}")))("outcomes").arr.nonEmpty)(())
+    }
+    val figures = json(ok(get(s"/cohorts/$november/report")))("perQuestion").arr
+    assert(
+      !figures.exists(f => f("question").str == questionId(name) && f("arm").str == "evidence"),
+      figures.toString
+    )
+    recorded(november).foreach(r =>
+      assertEquals(json(ok(get(s"/runs/${r.id}")))("scores").arr.size, 0)
+    )
+  }
 
   /** Drafted with its question; frozen by the step that makes its run (see ModelSteps). */
   Given("a prospective question {string} in a frozen cohort {string}") {
