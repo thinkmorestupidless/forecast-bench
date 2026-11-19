@@ -288,6 +288,15 @@ object Cohort:
       else Right(List(Reserved(runId, estimate, now)))
     }
 
+  /** A run that will not be made, and why: its question closed, or has an outcome (FR-030). */
+  def notMaking(
+      held: Option[Cohort],
+      run: (String, String, Int),
+      why: String,
+      now: Instant
+  ): Decision =
+    frozenOnly(held)(c => Right(notMadeFor(c, List(run), why, now)))
+
   def settling(held: Option[Cohort], runId: String, cost: BigDecimal, now: Instant): Decision =
     frozenOnly(held)(_ => Right(List(Settled(runId, cost, now))))
 

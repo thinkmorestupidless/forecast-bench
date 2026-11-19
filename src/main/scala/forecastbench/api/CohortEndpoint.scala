@@ -110,12 +110,8 @@ final class CohortEndpoint(client: ComponentClient, views: ViewClient)
   }
 
   post("/{id}/forecast") { (id: String) =>
-    val held = read(id)
-    val made = Runs
-      .of(views, Some(id), None, None)
-      .map(r => RunKey(r.run.question, r.run.arm, r.run.repetition))
-      .distinct
-      .toList
+    val held    = read(id)
+    val made    = recorded(held).map(r => RunKey(r.question, r.arm, r.repetition)).distinct
     val started = cohort(id).call(CohortEntity.startForecast).invoke(Start(made, now))
     if !started.started then
       Respond(
@@ -140,7 +136,7 @@ final class CohortEndpoint(client: ComponentClient, views: ViewClient)
 
   post("/{id}/retry-failed") { (id: String) =>
     val held    = read(id)
-    val runs    = Runs.of(views, Some(id), None, None).map(_.run).toList
+    val runs    = recorded(held)
     val made    = runs.map(r => RunKey(r.question, r.arm, r.repetition)).distinct
     val started = cohort(id).call(CohortEntity.startForecast).invoke(Start(made, now))
     if !started.started then Respond(Forecasting.refused(Cohort.WindowEnded, started.notMade), 409)
@@ -177,6 +173,26 @@ final class CohortEndpoint(client: ComponentClient, views: ViewClient)
       .map(r => Happened(r.run.recordedAt, s"run ${r.run.id} recorded, ${r.run.ending.word}"))
     (own.history ++ runs).sortBy(_.at)
   }
+
+  /**
+   * Every run of the cohort, read from the runs themselves and not the view, which may not yet hold
+   * the run that just failed: each question, arm and repetition, attempt after attempt.
+   */
+  private def recorded(c: Cohort): List[RunRecorded] =
+    c.runs.flatMap { (q, a, r) =>
+      Iterator
+        .from(1)
+        .map(n =>
+          client
+            .forEventSourcedEntity(EntityId(Ids.run(c.id, q, a, r, n)))
+            .call(RunEntity.get)
+            .invoke()
+            .run
+        )
+        .takeWhile(_.isDefined)
+        .flatten
+        .toList
+    }
 
   private def read(id: String): Cohort =
     cohort(id)

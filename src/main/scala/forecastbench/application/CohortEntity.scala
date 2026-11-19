@@ -39,6 +39,7 @@ final case class Started(started: Boolean, notMade: List[NotMade])
 final case class Reserve(run: RunKey, runId: String, estimate: BigDecimal, now: Instant)
 final case class Reservation(granted: Boolean, reason: Option[String])
 final case class Settle(runId: String, cost: BigDecimal, now: Instant)
+final case class NotMaking(run: RunKey, reason: String, now: Instant)
 
 /**
  * One experiment. Every change to a drafted cohort is an event; a frozen one refuses them all
@@ -121,6 +122,11 @@ final class CohortEntity(context: EventSourcedEntityContext)
   def settle(s: Settle): Effect[Cohort] =
     decide(Cohort.settling(held, s.runId, s.cost, s.now))(cohort)
 
+  def notMade(n: NotMaking): Effect[Cohort] =
+    decide(Cohort.notMaking(held, (n.run.question, n.run.arm, n.run.repetition), n.reason, n.now))(
+      cohort
+    )
+
   def get: ReadOnlyEffect[CohortState] = effects.reply(currentState)
 
 object CohortEntity
@@ -145,6 +151,7 @@ object CohortEntity
   given Serializer[Started]     = Codecs.serializer[Started]("cohort-started")
   given Serializer[Reserve]     = Codecs.serializer[Reserve]("cohort-reserve")
   given Serializer[Reservation] = Codecs.serializer[Reservation]("cohort-reservation")
+  given Serializer[NotMaking]   = Codecs.serializer[NotMaking]("cohort-not-making")
   given Serializer[Settle]      = Codecs.serializer[Settle]("cohort-settle")
 
   /** The line a cohort event adds to its history; reservations are not history. */
@@ -180,4 +187,5 @@ object CohortEntity
   val startForecast  = command("start-forecast")(_.startForecast)
   val reserve        = command("reserve")(_.reserve)
   val settle         = command("settle")(_.settle)
+  val notMade        = command("not-made")(_.notMade)
   val get            = query("get")(_.get)

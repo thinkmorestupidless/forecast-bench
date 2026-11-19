@@ -95,8 +95,27 @@ final class QuestionForecast(context: WorkflowContext) extends Workflow[Question
         .invoke(ReadOutcome(OutcomeReading(value, vq.disputed, vq.resolvedAt), now)): Unit
     }
 
+  /**
+   * Why a run of a prospective question is no longer made: it closed, or has an outcome. Asked
+   * before the model is called, so nothing is spent on a run the run entity would refuse.
+   */
+  private def tooLate(q: Question): Option[String] =
+    if q.standing != Standing.Prospective then None
+    else if !now.isBefore(q.closesAt) then Some(Run.Closed)
+    else if q.current.isDefined then Some(Run.HasOutcome)
+    else None
+
+  private def notMade(run: RunPlan, why: String): StepEffect =
+    cohort
+      .call(CohortEntity.notMade)
+      .invoke(NotMaking(RunKey(plan.question, run.arm, run.repetition), why, now)): Unit
+    next(currentState.copy(pending = currentState.pending.filterNot(_ == run)))
+
   def venuePriceStep: StepEffect =
-    val run  = currentState.pending.head
+    val run = currentState.pending.head
+    tooLate(question).fold(venuePrice(run))(notMade(run, _))
+
+  private def venuePrice(run: RunPlan): StepEffect =
     val said = currentState.venue.getOrElse(VenueSaid(None, unreadable = true))
     val ending = said.reading match
       case Some(r)                 => Ending.Forecast(r.probability)
@@ -108,8 +127,11 @@ final class QuestionForecast(context: WorkflowContext) extends Workflow[Question
 
   def modelStep: StepEffect =
     val run = currentState.pending.head
-    val arm = Arms.named(run.arm).get
     val q   = question
+    tooLate(q).fold(modelRun(run, q))(notMade(run, _))
+
+  private def modelRun(run: RunPlan, q: Question): StepEffect =
+    val arm = Arms.named(run.arm).get
     val asked =
       QuestionGiven(q.statement, q.criteria, q.closesAt, plan.pretendedTime.getOrElse(now))
     arm.`given`(asked, None, None) match
