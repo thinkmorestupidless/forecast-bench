@@ -1,9 +1,12 @@
 package forecastbench.steps
 
-import forecastbench.domain.{Ids, OutcomeValue}
+import com.thinkmorestupidless.ankka.core.EntityId
+import forecastbench.application.{CohortForecast, RunEntity}
+import forecastbench.domain.{Ids, OutcomeValue, RunRecorded}
 import forecastbench.support.ScriptedVenue
 
 import java.time.{Duration, Instant}
+import scala.concurrent.duration.DurationInt
 
 /** How the suites make the questions and cohorts their scenarios start from, through the routes. */
 trait CohortSetup extends FeatureSuite:
@@ -18,7 +21,7 @@ trait CohortSetup extends FeatureSuite:
     val venueId = world.venueId(name)
     val closes  = fixture.clock.now.plus(closesIn)
     val listed =
-      ScriptedVenue.question(venueId, s"Will $name happen?", closes, eventGroup = eventGroup)
+      ScriptedVenue.question(venueId, statement(name), closes, eventGroup = eventGroup)
     fixture.kalshi.list(listed)
     resolved.foreach(o => fixture.kalshi.resolve(venueId, o, closes.minus(Duration.ofDays(1))))
     fixture.kalshi.only = Some(venueId)
@@ -28,6 +31,11 @@ trait CohortSetup extends FeatureSuite:
     val id = Ids.question("kalshi", venueId)
     world.held(s"question:$name") = id
     id
+
+  /**
+   * A question's statement: its name and the scenario's number, which the scripted model keys on.
+   */
+  protected def statement(name: String): String = s"Will $name happen [#${world.n}]?"
 
   protected def questionId(name: String): String =
     world.held.getOrElse(s"question:$name", fail(s"the scenario has no question '$name'"))
@@ -68,6 +76,36 @@ trait CohortSetup extends FeatureSuite:
   protected def freeze(cohort: String): String = ok(post(s"/cohorts/$cohort/freeze", "{}"))
 
   protected def readCohort(cohort: String): ujson.Value = json(ok(get(s"/cohorts/$cohort")))
+
+  /** Every run of the cohort recorded so far, read from the runs themselves, any attempt. */
+  protected def recorded(cohort: String): List[RunRecorded] =
+    val c = readCohort(cohort)
+    for
+      q       <- c("questions").arr.map(_.str).toList
+      a       <- c("arms").arr.map(_.str).toList
+      r       <- (1 to c("repetitions").num.toInt).toList
+      attempt <- (1 to 3).toList
+      run <- fixture.kit.componentClient
+        .forEventSourcedEntity(EntityId(Ids.run(cohort, q, a, r, attempt)))
+        .call(RunEntity.get)
+        .invoke()
+        .run
+    yield run
+
+  /** Asks for the cohort's forecast and waits for every question of its round to end. */
+  protected def forecastAndWait(cohort: String, round: Int = 1): (Int, String) =
+    val answer = post(s"/cohorts/$cohort/forecast", "{}")
+    if answer._1 == 202 then awaitRound(cohort, round)
+    answer
+
+  protected def awaitRound(cohort: String, round: Int): Unit =
+    eventually(s"the round $round of $cohort to end", 60.seconds) {
+      val state = fixture.kit.componentClient
+        .forWorkflow(EntityId(CohortForecast.id(cohort, round)))
+        .call(CohortForecast.get)
+        .invoke()
+      Option.when(state.ended)(())
+    }
 
   /** The arm as the features name it ("model alone") and as the bench does ("model-alone"). */
   protected def arm(words: String): String = words.trim.toLowerCase.replace(' ', '-')

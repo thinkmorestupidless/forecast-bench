@@ -5,11 +5,6 @@ import java.time.Duration
 class CohortFeatures extends FeatureSuite("features/cohorts/cohort.feature") with CohortSetup:
 
   override protected def pending = Set(
-    // T030: the forecast.
-    "no arm forecasts a cohort that is not frozen",
-    "each arm forecasts each question once for each repetition",
-    "a cohort stops making runs when its budget is spent",
-    "a run not made within the forecast window is never made",
     // T069: development cohorts.
     "a prospective cohort refuses a development question",
     "a development cohort refuses a prospective question"
@@ -114,4 +109,83 @@ class CohortFeatures extends FeatureSuite("features/cohorts/cohort.feature") wit
     assert(
       readCohort(world.cohort(name))("questions").arr.map(_.str).contains(questionId("shared"))
     )
+  }
+
+  When("the experimenter asks for the cohort {string} to be forecast") { (name: String) =>
+    world.last = forecastAndWait(world.cohort(name))
+  }
+
+  When("the experimenter asks for the cohort to be forecast") { () =>
+    world.last = forecastAndWait(november)
+  }
+
+  Then("nothing is forecast") { () =>
+    assertEquals(world.last._1, 409, world.last._2)
+    Thread.sleep(300)
+    assertEquals(recorded(november), Nil)
+  }
+
+  Then("the experimenter is told the cohort is not frozen") { () =>
+    assert(world.last._2.contains("the cohort is not frozen"), world.last._2)
+  }
+
+  Given("the cohort names {string} questions, {string} arms and {string} repetitions") {
+    (questions: String, arms: String, repetitions: String) =>
+      val qs = (1 to questions.toInt).map(i => importedQuestion(s"question $i")).toList
+      settle(november, qs, List("venue-price", "model-alone").take(arms.toInt), repetitions.toInt)
+  }
+
+  Given("the cohort is frozen")(() => freeze(november): Unit)
+
+  When("the cohort is forecast")(() => ok(forecastAndWait(november)): Unit)
+
+  Then("{string} runs are recorded") { (n: String) =>
+    val runs = recorded(november)
+    assertEquals(runs.size, n.toInt, runs.map(_.id).mkString("\n"))
+    assertEquals(runs.map(r => (r.question, r.arm, r.repetition)).distinct.size, n.toInt)
+  }
+
+  Given("the cohort is frozen with a budget of {string}") { (budget: String) =>
+    // One question, so its runs are made one after another and each is settled before the next
+    // is reserved: what the scenario observes is the budget, not two questions racing for it.
+    settle(
+      november,
+      List(importedQuestion("first")),
+      List("model-alone"),
+      repetitions = 3,
+      budget = budget
+    )
+    freeze(november): Unit
+  }
+
+  When("the cost of its runs reaches {string}") { (cost: String) =>
+    // Each run costs half the budget: no input, and output tokens at the model's price.
+    val price = fixture.settings.models("model-a").prices.outputPerMillion
+    val out   = (BigDecimal(cost) / 2 / price * 1000000).toLong
+    fixture.model.when(s"[#${world.n}]")(_ =>
+      Right(
+        com.thinkmorestupidless.ankka.agent.ModelResponse(
+          forecastbench.support.ScriptedModel.forecast(0.4),
+          usage = com.thinkmorestupidless.ankka.agent.TokenUsage(0, out.toInt)
+        )
+      )
+    )
+    ok(forecastAndWait(november)): Unit
+    assertEquals(BigDecimal(readCohort(november)("spent").num), BigDecimal(cost))
+  }
+
+  Then("no further run is made") { () =>
+    assertEquals(recorded(november).size, 2)
+  }
+
+  Then("the cohort says which runs were not made") { () =>
+    val notMade = readCohort(november)("notMade").arr
+    assert(notMade.nonEmpty, "the cohort names no run not made")
+    notMade.foreach(n => assert(n("reason").str.nonEmpty))
+  }
+
+  Given("the cohort is frozen and its forecast window has ended") { () =>
+    settle(november, List(importedQuestion("late")), List("model-alone"), windowDays = 1)
+    freeze(november): Unit
+    fixture.clock.advance(Duration.ofDays(2))
   }
