@@ -1,0 +1,49 @@
+{
+  "schema_version": "1.0",
+  "extensions": {
+    "bdd": {
+      "version": "0.2.0",
+      "source": "local",
+      "manifest_hash": "sha256:8e669b9d823eef554330c637daec51907dc941d537faad95537d0ae9f8ba402d",
+      "enabled": true,
+      "priority": 10,
+      "registered_commands": {
+        "claude": [
+          "speckit.bdd.features",
+          "speckit.bdd.check"
+        ]
+      },
+      "registered_skills": [],
+      "installed_at": "2026-11-19T12:20:38.322968+00:00"
+    },
+    "review": {
+      "version": "0.1.0",
+      "source": "local",
+      "manifest_hash": "sha256:9df5bb9c079ff6c807f654843a708d841b7c19f571b5708c4d182fd9928b920e",
+      "enabled": true,
+      "priority": 10,
+      "registered_commands": {
+        "claude": [
+          "speckit.review.review"
+        ]
+      },
+      "registered_skills": [],
+      "installed_at": "2026-11-19T12:20:38.465080+00:00"
+    },
+    "design-build": {
+      "version": "0.1.0",
+      "source": "local",
+      "manifest_hash": "sha256:8b2681facab9266d8908d0361f3153ac4c9f60848d73d007db54835547ea194a",
+      "enabled": true,
+      "priority": 10,
+      "registered_commands": {
+        "claude": [
+          "speckit.design-build.design",
+          "speckit.design-build.build"
+        ]
+      },
+      "registered_skills": [],
+      "installed_at": "2026-11-19T12:20:38.599429+00:00"
+    }
+  }
+}

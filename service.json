@@ -1,0 +1,7 @@
+{
+  "name": "forecast-bench",
+  "service": {
+    "image": "forecast-bench:latest",
+    "runtime": "0.17.0"
+  }
+}

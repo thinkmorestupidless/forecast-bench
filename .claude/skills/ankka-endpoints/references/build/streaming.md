@@ -1,0 +1,366 @@
+# Streaming responses
+
+> Stream an agent's reply token by token to a caller and over HTTP as server-sent events, and know what streaming changes about guardrails and sessions.
+
+Source: https://docs.ankka.cloud/build/streaming/
+An agent handler can stream its reply: the caller receives the model's text as it is generated rather
+than waiting for the whole answer. Streaming is declared on the handler, consumed through the component
+client, and served over HTTP as server-sent events (SSE). Agents stream their replies; a view streams its
+rows and keeps a watched query open, which [Views](views.md#streaming-a-query) describes. An entity or a
+workflow refuses a streaming call rather than ignoring it, because a caller waiting for tokens that never
+come would wait forever.
+
+## Declaring a streaming handler
+
+A streaming handler is registered as a stream rather than a command, and answers many times instead of
+once:
+
+**Scala**
+
+```scala
+/** Streams the reply token by token, tools and all. */
+def chat(question: String): StreamEffect =
+  effects
+    .systemMessage(WeatherAgent.SystemMessage)
+    .userMessage(question)
+    .tools(WeatherAgent.getWeather)
+    .thenStream()
+```
+
+**Java**
+
+```java
+/** Streams the reply token by token, tools and all: a stream, not a command. */
+@Stream("chat")
+public StreamEffect chat(String question) {
+  return effects()
+      .systemMessage(SYSTEM_MESSAGE)
+      .userMessage(question)
+      .tools(Tools.class)
+      .thenStream();
+}
+```
+
+**Kotlin**
+
+```kotlin
+/** Streams the reply token by token, tools and all. */
+@Stream("chat")
+fun chat(question: String): StreamEffect = effects {
+    systemMessage(SYSTEM_MESSAGE).userMessage(question).tools<WeatherTools>().thenStream()
+}
+```
+
+**Python**
+
+```python
+@stream("chat")
+def chat(self, question: str) -> AgentEffect[str]:
+    return self._describe(question)
+```
+
+**TypeScript**
+
+```ts
+static readonly handlers = {
+  ask: command("ask", s.string, s.string, (a: CartAssistant, question) => a.describe(question)),
+  chat: stream("chat", s.string, (a: CartAssistant, question) => a.describe(question)),
+}
+```
+
+**Go**
+
+```go
+// Streams the reply token by token, tools and all: registered as a stream, not an ask, so a
+// caller cannot await one value from a handler that produces many.
+ankka.AskStream("chat", func(_ context.Context, question string) (ankka.AgentEffect, error) {
+	return ankka.SystemMessage(weatherSystemMessage).UserMessage(question).
+		Tools("get_weather").ThenReply(), nil
+}),
+```
+
+In Scala the handler returns a `StreamEffect`, built with `thenStream()`, and the companion registers it
+with `stream` rather than `command`:
+
+**Scala**
+
+```scala
+val chat = stream("chat")(_.chat)
+```
+
+**Java**
+
+```java
+/** Streams the reply token by token, tools and all: a stream, not a command. */
+@Stream("chat")
+public StreamEffect chat(String question) {
+  return effects()
+      .systemMessage(SYSTEM_MESSAGE)
+      .userMessage(question)
+      .tools(Tools.class)
+      .thenStream();
+}
+```
+
+**Kotlin**
+
+```kotlin
+/** Streams the reply token by token, tools and all. */
+@Stream("chat")
+fun chat(question: String): StreamEffect = effects {
+    systemMessage(SYSTEM_MESSAGE).userMessage(question).tools<WeatherTools>().thenStream()
+}
+```
+
+**Python**
+
+```python
+@stream("chat")
+def chat(self, question: str) -> AgentEffect[str]:
+    return self._describe(question)
+```
+
+**TypeScript**
+
+```ts
+static readonly handlers = {
+  ask: command("ask", s.string, s.string, (a: CartAssistant, question) => a.describe(question)),
+  chat: stream("chat", s.string, (a: CartAssistant, question) => a.describe(question)),
+}
+```
+
+**Go**
+
+```go
+// Streams the reply token by token, tools and all: registered as a stream, not an ask, so a
+// caller cannot await one value from a handler that produces many.
+ankka.AskStream("chat", func(_ context.Context, question string) (ankka.AgentEffect, error) {
+	return ankka.SystemMessage(weatherSystemMessage).UserMessage(question).
+		Tools("get_weather").ThenReply(), nil
+}),
+```
+
+The two registrations are separate on purpose. A `command` is called with `.call(...)` and answers once;
+a `stream` is called with `.stream(...)` and answers many times. Keeping them apart means a caller cannot
+await one value from a handler that produces many, or the reverse; the compiler refuses it.
+
+In Python the decorator is `@stream` and the handler returns an ordinary `AgentEffect`; in TypeScript the
+handler is declared with `stream` in the component's `handlers`. The assistant in
+[Agents](agents.md) declares one in each.
+
+## Consuming a stream
+
+**Scala**
+
+```scala
+val tokens: Source[String, NotUsed] =
+  componentClient
+    .forAgent(SessionId("s-1"))
+    .stream(WeatherAgent.chat)("Will it rain in Lisbon?")
+```
+
+**Java**
+
+```java
+/** The reply as it is written: a publisher of tokens, read at the caller's pace. */
+static Flow.Publisher<String> tokens(ComponentClient client, String session, String question) {
+  return AgentClients.forAgent(client, session).stream(WeatherAgent::chat, question);
+}
+```
+
+**Kotlin**
+
+```kotlin
+val tokens: Flow<String> =
+    kit.componentClient().forAgent("s-1").streamFlow(streamRef(WeatherAgent::chat), "What is the weather?")
+val text = runBlocking { tokens.toList() }.joinToString("")
+```
+
+**Python**
+
+```python
+async for token in self.client.with_metadata(self.request.metadata).for_agent("assistant", session).call("chat").stream(question):
+    yield token
+```
+
+**TypeScript**
+
+```ts
+for await (const token of client.of(CartAssistant, "s-1").call(CartAssistant.handlers.chat).stream("Will it rain?")) {
+  tokens.push(token)
+}
+```
+
+**Go**
+
+```go
+// askOnce reads a whole streamed answer: tokens are pushed from wherever the session is hosted to
+// here as the model produces them, and a refusal ends the stream with its error.
+func askOnce(ctx context.Context, session, question string) (string, error) {
+	var answer strings.Builder
+	for token, err := range ankka.InvokeStream(ctx, "weather-agent", session, "chat", question) {
+		if err != nil {
+			return "", err
+		}
+		answer.WriteString(token)
+	}
+	return answer.String(), nil
+}
+```
+
+The Scala client answers with a Pekko Streams `Source[String, NotUsed]` of text chunks, and nothing is
+sent until the source is run. Python and TypeScript answer with an async iterator, which starts the
+stream when it is first pulled.
+
+Tokens are pushed straight from wherever the session is hosted in the cluster to wherever the stream is
+being read, with nothing buffering the whole reply. A consumer that falls more than 1024 chunks behind
+fails the stream rather than silently dropping text.
+
+A refusal — a guardrail, an error effect, a failed model call — ends the stream with an error: a
+`CommandError` in every SDK.
+
+## Serving a stream over HTTP
+
+An endpoint serves a stream with `sse`, which answers `GET` as `text/event-stream`. A stream goes one
+way, from the service; for a connection the client also writes to, declare a socket route instead (see
+[HTTP endpoints](http-endpoints.md#sockets)).
+
+**Scala**
+
+```scala
+sse("/{session}") { (session: String) =>
+  client
+    .forAgent(SessionId(session))
+    .stream(WeatherAgent.chat)("What is the weather?")
+}
+```
+
+**Java**
+
+```java
+/** Each token the agent writes, as one event. */
+@Sse("/chat/{session}")
+public Flow.Publisher<SseEvent> chat(String session) {
+  var tokens =
+      AgentClients.forAgent(componentClient(), session)
+          .stream(WeatherAgent::chat, "What is the weather?");
+  return asEvents(tokens);
+}
+
+// The SDK has no mapper over a Flow.Publisher; this one passes each token on, at the
+// subscriber's pace.
+private static Flow.Publisher<SseEvent> asEvents(Flow.Publisher<String> tokens) {
+  return subscriber ->
+      tokens.subscribe(
+          new Flow.Subscriber<String>() {
+            @Override
+            public void onSubscribe(Flow.Subscription subscription) {
+              subscriber.onSubscribe(subscription);
+            }
+
+            @Override
+            public void onNext(String token) {
+              subscriber.onNext(SseEvent.text(token));
+            }
+
+            @Override
+            public void onError(Throwable failure) {
+              subscriber.onError(failure);
+            }
+
+            @Override
+            public void onComplete() {
+              subscriber.onComplete();
+            }
+          });
+}
+```
+
+**Kotlin**
+
+```kotlin
+@Sse("/chat/{session}")
+fun chat(session: String): Flow.Publisher<SseEvent> =
+    componentClient()
+        .forAgent(session)
+        .streamFlow(streamRef(WeatherAgent::chat), "What is the weather?")
+        .map { SseEvent.text(it) }
+        .asPublisher()
+```
+
+**Python**
+
+```python
+@post("/ask/{session}")
+async def ask(self, session: str, question: str) -> str:
+    return await self.client.with_metadata(self.request.metadata).for_agent("assistant", session).call("ask").invoke(question, reply=str)
+
+@sse("/chat/{session}")
+async def chat(self, session: str) -> AsyncIterator[str]:
+    question = next((v for k, v in self.request.query if k == "q"), "")
+    async for token in self.client.with_metadata(self.request.metadata).for_agent("assistant", session).call("chat").stream(question):
+        yield token
+```
+
+**TypeScript**
+
+```ts
+ask: post("/ask/{session}", s.string, s.string, (ep: ShoppingCartEndpoint, req, question) =>
+  ep.client.of(CartAssistant, req.params.session).call(CartAssistant.handlers.ask).invoke(question),
+),
+chat: sse("/chat/{session}", (ep: ShoppingCartEndpoint, req) =>
+  ep.client.of(CartAssistant, req.params.session).call(CartAssistant.handlers.chat).stream(req.query.get("q") ?? ""),
+),
+```
+
+**Go**
+
+```go
+// Each token is one server-sent event, as the agent produces it.
+ankka.SSE("/{session}", func(ctx context.Context, req *ankka.Request) iter.Seq2[string, error] {
+	return ankka.InvokeStream(ctx, "weather-agent", req.Param("session"), "chat", "What is the weather?")
+}),
+```
+
+The Scala handler returns the `Source`, and `sseBody` is the `POST` form, taking a path parameter and a
+decoded body. A Python `@sse` route is an async generator, and a TypeScript one returns an async
+iterable.
+
+Read query parameters and headers while building the stream, not inside it. In Scala the handler only
+builds the `Source`; the HTTP server pulls its elements later, on another thread, where the request is no
+longer available. See [HTTP endpoints](http-endpoints.md).
+
+## Every event is a JSON string
+
+Each server-sent event's `data` field holds one chunk, encoded as a JSON string:
+
+```text
+data:"Lisbon is"
+
+data:" mild today."
+```
+
+A client decodes each `data` field with a JSON parser. Raw text is not safe in an SSE `data` field: the
+protocol strips one leading space from a field's value, and a newline inside a chunk ends the field and
+splits the chunk into two events. Both corrupt text silently, and only on text a model happened to
+produce, so the platform encodes every chunk rather than leave it to chance.
+
+## Every turn streams
+
+When the model says something before calling a tool — "let me check the forecast" — that text is
+streamed immediately, before the tool runs, and the model's answer after the tool streams too. Withholding
+everything until the last turn would leave a reader looking at nothing while tools run, which is what
+makes a streaming interface feel broken.
+
+## The session is held for the stream
+
+A session handles one request at a time, and a stream is one request for as long as it lasts. A second
+call on the same session waits until the stream has finished, so one conversation cannot interleave two
+replies. Use separate sessions for independent conversations.
+
+## Guardrails on a stream
+
+**Output guardrails cannot un-send a token.** On a streaming handler they run after the reply has been
+delivered. A rejection still fails the stream and still keeps the reply out of memory, but the reader has
+already seen the text. Use input guardrails for anything that must never be shown, since those run before
+the model is called and a rejection there sends nothing.
