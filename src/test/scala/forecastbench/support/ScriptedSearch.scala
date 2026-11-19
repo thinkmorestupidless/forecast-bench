@@ -15,13 +15,18 @@ import scala.jdk.CollectionConverters.*
 final class ScriptedSearch extends Search:
   val name = "scripted"
 
-  private val found   = ConcurrentHashMap[String, Either[String, List[SearchResult]]]()
+  private val found   = ConcurrentHashMap[String, String => Either[String, List[SearchResult]]]()
   private val holds   = ConcurrentHashMap[String, CountDownLatch]()
   private val queries = ConcurrentLinkedQueue[(String, Option[Instant])]()
 
-  def finds(word: String, results: List[SearchResult]): Unit = found.put(word, Right(results)): Unit
-  def findsNothing(word: String): Unit                       = finds(word, Nil)
-  def fails(word: String): Unit = found.put(word, Left("the scripted search is down")): Unit
+  def finds(word: String, results: List[SearchResult]): Unit =
+    found.put(word, _ => Right(results)): Unit
+
+  /** What each query holding the word finds, by the query. */
+  def findsBy(word: String)(results: String => List[SearchResult]): Unit =
+    found.put(word, q => Right(results(q))): Unit
+  def findsNothing(word: String): Unit = finds(word, Nil)
+  def fails(word: String): Unit = found.put(word, _ => Left("the scripted search is down")): Unit
 
   /** Holds every search for the word until `release`: a pack not yet gathered. */
   def hold(word: String): Unit    = holds.put(word, CountDownLatch(1)): Unit
@@ -39,7 +44,7 @@ final class ScriptedSearch extends Search:
     holds.asScala
       .find((w, _) => query.contains(w))
       .foreach((_, latch) => latch.await(2, TimeUnit.MINUTES))
-    found.asScala.find((w, _) => query.contains(w)).map(_._2) match
+    found.asScala.find((w, _) => query.contains(w)).map(_._2(query)) match
       case Some(Left(why))      => Left(SearchFailed(name, why))
       case Some(Right(results)) => Right(results.take(limit))
       case None                 => Right(ScriptedSearch.default(query).take(limit))

@@ -125,7 +125,7 @@ with what it came from and cannot change.
 - [X] T050 [US3] The `gather` step in `main/application/QuestionForecast.scala` and its entry at freeze: `main/api/CohortEndpoint.scala`'s freeze starts gathering for every question, the cohort notes each pack as gathered, empty or failed with the reason; the arm steps wait for the pack
 - [X] T051 [US3] `res/instructions/evidence/1.md`; the evidence arm's `given` in `main/domain/Arms.scala` (the documents block of contracts/arm.md) and its step in `main/application/QuestionForecast.scala`, abstaining on an empty pack
 - [X] T052 [US3] `GET /cohorts/{id}/packs/{question}` in `main/api/CohortEndpoint.scala`
-- [ ] T053 [US3] `test/steps/PackFeatures.scala` binds every scenario of `features/evidence/pack.feature` but the two of development cohorts (T070), binding "every arm that takes evidence is given the same pack" for the evidence arm now and for graph and prose in T066
+- [X] T053 [US3] `test/steps/PackFeatures.scala` binds every scenario of `features/evidence/pack.feature` but the two of development cohorts (T070), binding "every arm that takes evidence is given the same pack" for the evidence arm now and for graph and prose in T066
 - [ ] T054 [P] [US3] `main/gather/Exa.scala`: the `Search` on Exa's API, written from its current documentation (research R12 "Verify"), key from `EXA_API_KEY`, a failure when there is none; `test/gather/ExaSuite.scala` decoding recorded replies in `src/test/resources/exa/`
 - [ ] T055 [US3] `test/steps/ArmsFeatures.scala` and `test/steps/RecordFeatures.scala` bind the scenarios that name the evidence arm (the evidence arm is given what the model-alone arm is given and the evidence pack; a run is recorded with everything its answer came from)
 
