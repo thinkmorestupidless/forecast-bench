@@ -14,16 +14,18 @@ final class World(val n: Int):
   private val named = scala.collection.mutable.Map.empty[String, String]
 
   /** A cohort id for a name in the feature: the name and this scenario's number. */
-  def cohort(name: String): String = named.getOrElseUpdate(s"cohort:$name", s"${slug(name)}-$n")
+  def cohort(name: String): String =
+    named.getOrElseUpdate(s"cohort:$name", s"${slug(name).take(12).stripSuffix("-")}-$n")
 
   /** A venue's id for a question the feature names. */
-  def venueId(name: String): String = named.getOrElseUpdate(s"question:$name", s"s$n-${slug(name)}")
+  def venueId(name: String): String =
+    named.getOrElseUpdate(s"question:$name", s"s$n-${slug(name).take(48)}")
 
   /** Values a scenario's steps pass from Given to Then. */
   val held = scala.collection.mutable.Map.empty[String, String]
 
   private def slug(text: String): String =
-    text.toLowerCase.replaceAll("[^a-z0-9]+", "-").stripPrefix("-").stripSuffix("-").take(12)
+    text.toLowerCase.replaceAll("[^a-z0-9]+", "-").stripPrefix("-").stripSuffix("-")
 
 object World:
   private val counter = AtomicInteger(0)
