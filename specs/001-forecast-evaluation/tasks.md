@@ -166,7 +166,7 @@ content in two shapes; the report leads with their comparison.
 - [X] T068 [US5] Import of resolved questions in `main/api/VenueEndpoint.scala` (`"standing": "development"` reads `Venue.resolved`, holds each as a development question with its outcome)
 - [X] T069 [US5] `test/steps/ImportFeatures.scala` binds: a question its venue has already resolved is imported as a development question; a development question never becomes prospective. `test/steps/CohortFeatures.scala` binds: a prospective cohort refuses a development question; a development cohort refuses a prospective question
 - [X] T070 [US5] The pretended time through `main/gather/Gatherer.scala` (asked of the search and applied to its results) and through every arm's `Now:` line in `main/domain/Arms.scala`; a development cohort's runs are recorded though its questions have outcomes; `test/steps/PackFeatures.scala` binds the two scenarios of a development cohort's pack
-- [ ] T071 [US5] `main/report/Report.scala` and `main/report/Markdown.scala`: a development cohort's report marked `development: the model may know these outcomes` at its head; a report over several leaves development cohorts out and names them
+- [X] T071 [US5] `main/report/Report.scala` and `main/report/Markdown.scala`: a development cohort's report marked `development: the model may know these outcomes` at its head; a report over several leaves development cohorts out and names them
 - [ ] T072 [US5] `test/steps/ReportFeatures.scala` binds: a report of a development cohort says on its face that it shows nothing; a report over several cohorts leaves out development cohorts
 
 **Checkpoint**: every scenario of `features/` is bound; `FeatureSuite`'s filter of unbound names is empty and removed.
