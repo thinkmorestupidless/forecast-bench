@@ -55,10 +55,13 @@ class RunEntitySuite extends munit.FunSuite:
     val yes = Outcome(1, OutcomeValue.Yes, false, Some(now), now, None)
     assertEquals(
       kit
-        .call(RunEntity.score)(ScoreRun(1, yes, now))
+        .call(RunEntity.score)(ScoreRun(1, yes, 0.16, 0.51, now))
         .replyValue
         .scores
         .map(s => (s.method, s.brier)),
-      List((1, (0.6 - 1) * (0.6 - 1)))
+      List((1, 0.16))
     )
-    assertEquals(kit.call(RunEntity.score)(ScoreRun(1, yes, now)).error.code, ErrorCode.Conflict)
+    assertEquals(
+      kit.call(RunEntity.score)(ScoreRun(1, yes, 0.16, 0.51, now)).error.code,
+      ErrorCode.Conflict
+    )

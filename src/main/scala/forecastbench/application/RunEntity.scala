@@ -3,12 +3,13 @@ package forecastbench.application
 import com.thinkmorestupidless.ankka.core.*
 import com.thinkmorestupidless.ankka.sdk.*
 import forecastbench.domain.*
-import forecastbench.report.Scoring
 
 import java.time.Instant
 
 final case class Record(run: RunRecorded, question: QuestionNow)
-final case class ScoreRun(method: Int, outcome: Outcome, now: Instant)
+
+/** A score its caller worked out by the method it names; the run decides whether it may hold it. */
+final case class ScoreRun(method: Int, outcome: Outcome, brier: Double, log: Double, now: Instant)
 
 /**
  * One run, recorded once. It has `record`, `score` and `get`, and nothing else: no command could
@@ -27,9 +28,7 @@ final class RunEntity extends EventSourcedEntity[RunState, RunEvent]:
       case Right(events)                => effects.persistAll(events).thenReplyState
 
   def score(s: ScoreRun): Effect[RunState] =
-    val p      = currentState.run.flatMap(_.ending.forecast).getOrElse(0.0)
-    val scored = Scoring.score(s.method, p, s.outcome.value)
-    Run.scoring(currentState, s.method, s.outcome, scored, s.now) match
+    Run.scoring(currentState, s.method, s.outcome, Some((s.brier, s.log)), s.now) match
       case Left(why)     => effects.error(why, ErrorCode.Conflict)
       case Right(events) => effects.persistAll(events).thenReplyState
 
