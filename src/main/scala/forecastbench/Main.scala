@@ -1,29 +1,19 @@
 package forecastbench
 
-import forecastbench.api.ItemEndpoint
-import forecastbench.application.{ItemEntity, ItemRows}
-import com.thinkmorestupidless.ankka.http.HttpServer
 import com.thinkmorestupidless.ankka.runtime.{Ankka, ProjectionRuntime}
 
 /**
  * The whole service definition.
  *
- * Registration is explicit — there is no classpath scanning — so this is also the complete
- * inventory of what the service hosts, and a component you forget fails here at startup rather than
- * at its first request. `ProjectionRuntime` is what runs the view: without it every listing stays
- * empty while every write succeeds.
+ * Registration is explicit, so this is the complete inventory of what the bench hosts, and a
+ * component left out fails here at startup rather than at its first request.
  *
- * Locally this needs Postgres (`sbt schema`, then `docker compose up -d`). In an ankka deployment
- * the platform provides the database and every `ANKKA_*` variable.
+ * Locally this needs Postgres (`just up`). In an ankka deployment the platform provides the
+ * database and every `ANKKA_*` variable.
  */
 @main def run(): Unit =
   val service = Ankka.service
-    .register(ItemEntity.descriptor)
-    .register(ItemRows.descriptor)
     .withExtension(ProjectionRuntime())
-    .withExtension(
-      HttpServer.of(clients => ItemEndpoint(clients.componentClient, clients.viewClient))
-    )
     .start()
 
   sys.addShutdownHook(service.terminate())

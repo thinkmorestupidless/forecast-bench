@@ -393,7 +393,13 @@ the pull request is the independent one.
 
 ## Found during implementation
 
-*(empty)*
+- 2026-11-19 (T001): ankka 0.18.0 is on Maven Central with `ankka-agent` and `ankka-testkit`; the
+  pin is 0.18.0.
+- 2026-11-19 (T004): `Main.scala` starts `ProjectionRuntime` only. The HTTP server and
+  `TimerRuntime` are added with the first endpoint (T012) and the outcome reader (T036), since
+  each needs something to register.
+- 2026-11-19: this machine's default JDK is 27, not the family's 21; the build compiles and its
+  suite passes there, with deprecation warnings from the JDK about `sun.misc.Unsafe`. CI is on 21.
 
 ## Measurements
 
