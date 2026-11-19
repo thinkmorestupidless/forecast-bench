@@ -129,18 +129,38 @@ final class QuestionForecast(context: WorkflowContext) extends Workflow[Question
     record(recorded)
     next(made(run, recorded.id))
 
+  /**
+   * A model arm's run. An arm that takes evidence waits for its question's pack (FR-018): it pauses
+   * until the cohort notes the pack, reads it once it is gathered or empty, and is not made when
+   * the pack failed.
+   */
   def modelStep: StepEffect =
     val run = currentState.pending.head
     val q   = question
-    tooLate(q).fold(modelRun(run, q))(notMade(run, _))
+    val arm = Arms.named(run.arm).get
+    tooLate(q) match
+      case Some(why)                  => notMade(run, why)
+      case None if !arm.takesEvidence => modelRun(run, q, None)
+      case None =>
+        val note = cohort.call(CohortEntity.get).invoke().cohort.flatMap(_.packs.get(plan.question))
+        note match
+          case None => stepEffects.updateState(currentState).thenPause(PackWait, stepFor(run.arm))
+          case Some(n) if n.state == PackNote.Failed("").state =>
+            notMade(run, s"the pack was not gathered: ${n.reason.getOrElse("no reason was given")}")
+          case Some(_) => modelRun(run, q, heldPack)
 
-  private def modelRun(run: RunPlan, q: Question): StepEffect =
+  private def modelRun(run: RunPlan, q: Question, pack: Option[Pack]): StepEffect =
     val arm = Arms.named(run.arm).get
     val asked =
       QuestionGiven(q.statement, q.criteria, q.closesAt, plan.pretendedTime.getOrElse(now))
-    arm.`given`(asked, None, None) match
+    val packRef = pack.map(_ => packId)
+    arm.`given`(asked, pack, None) match
       case Left(Abstain(reason)) =>
-        val recorded = blank(run).copy(ending = Ending.Abstained(reason), model = Some(plan.model))
+        val recorded = blank(run).copy(
+          ending = Ending.Abstained(reason),
+          model = Some(plan.model),
+          pack = packRef
+        )
         record(recorded)
         next(made(run, recorded.id))
       case Right(userGiven) =>
@@ -174,6 +194,7 @@ final class QuestionForecast(context: WorkflowContext) extends Workflow[Question
             effort = entry.flatMap(_.effort),
             thinking = entry.map(_.thinking),
             instructions = ref,
+            pack = packRef,
             `given` = Some(givenRef),
             answered = answerRef,
             reasons = forecast.reasons,
@@ -246,11 +267,14 @@ final class QuestionForecast(context: WorkflowContext) extends Workflow[Question
 
   /** On to the step of the next run, or to the end. */
   private def next(state: QuestionForecastState): StepEffect =
-    val to = state.pending.headOption match
-      case None                                     => QuestionForecast.finish.ref
-      case Some(r) if r.arm == Arms.venuePrice.name => QuestionForecast.venuePrice.ref
-      case Some(_)                                  => QuestionForecast.model.ref
+    val to = state.pending.headOption.fold(QuestionForecast.finish.ref)(r => stepFor(r.arm))
     stepEffects.updateState(state).thenTransitionTo(to)
+
+  /** Each arm's runs are made by a step named for it. */
+  private def stepFor(arm: String): com.thinkmorestupidless.ankka.core.effect.StepRef = arm match
+    case "venue-price" => QuestionForecast.venuePrice.ref
+    case "evidence"    => QuestionForecast.evidence.ref
+    case _             => QuestionForecast.model.ref
 
   private def blank(run: RunPlan): RunRecorded = RunRecorded(
     id = Ids.run(plan.cohort, plan.question, run.arm, run.repetition, run.attempt),
@@ -307,7 +331,11 @@ object QuestionForecast
   val refresh    = step("refresh")(_.refreshStep)
   val venuePrice = step("venue-price")(_.venuePriceStep)
   val model      = step("model-alone")(_.modelStep)
-  val finish     = step("finish")(_.finishStep)
+  val evidence   = step("evidence")(_.modelStep)
+
+  /** How long an arm that takes evidence waits before it looks for its pack again. */
+  val PackWait: FiniteDuration = 2.seconds
+  val finish                   = step("finish")(_.finishStep)
 
   val start = command("start")(_.start)
   val get   = query("get")(_.get)
