@@ -6,6 +6,7 @@ import com.thinkmorestupidless.ankka.sdk.BucketExposure
 import com.thinkmorestupidless.ankka.testkit.AnkkaTestKit
 import forecastbench.BenchService
 import forecastbench.application.{Bench, Edges, Models, Settings}
+import forecastbench.report.Scoring
 import forecastbench.support.{ScriptedModel, ScriptedVenue, TestClock}
 
 /**
@@ -44,7 +45,8 @@ object ServiceFixture:
         clock,
         settings,
         Map("kalshi" -> kalshi, "polymarket" -> polymarket),
-        Models.all(settings, model)
+        Models.all(settings, model),
+        scoring = Scoring.methods + (2 -> Scoring.One.copy(version = 2, logBound = 0.001))
       )
     )
     val server = HttpServer.at("127.0.0.1", 0)(BenchService.endpoints*)

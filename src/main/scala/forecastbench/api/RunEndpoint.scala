@@ -37,7 +37,7 @@ final class RunEndpoint(client: ComponentClient, views: ViewClient, storage: Obj
     val answered = run.answered.flatMap(GivenBucket.read(storage, _))
     RunRead(
       run,
-      state.scores,
+      scoresOf(run, state.scores),
       input.map(_.text),
       answered.map(_.text),
       intact =
@@ -65,15 +65,29 @@ final class RunEndpoint(client: ComponentClient, views: ViewClient, storage: Obj
     Reproduced(f.answered, f.ending.forecast, f.usage, f.latencyMs)
   }
 
+  /** Each score marked when a later outcome of its question revises the one it was made on. */
+  private def scoresOf(run: RunRecorded, scores: List[Score]): List[ScoreRead] =
+    val outcomes = client
+      .forEventSourcedEntity(EntityId(run.question))
+      .call(QuestionEntity.get)
+      .invoke()
+      .question
+      .fold(List.empty[Outcome])(_.outcomes)
+    val revised = outcomes.flatMap(_.revises).toSet
+    scores.map(s => ScoreRead(s, revised.contains(s.outcomeSeq)))
+
   private def held(id: String): RunState =
     val state = client.forEventSourcedEntity(EntityId(id)).call(RunEntity.get).invoke()
     if state.run.isEmpty then Refusals.notFound(s"no run '$id'")
     state
 
 object RunEndpoint:
+  /** A score, and whether the outcome it was made on has since been revised. */
+  final case class ScoreRead(score: Score, revised: Boolean)
+
   final case class RunRead(
       run: RunRecorded,
-      scores: List[Score],
+      scores: List[ScoreRead],
       `given`: Option[String],
       answered: Option[String],
       intact: Boolean
