@@ -74,7 +74,7 @@ object Exa:
   )
   final case class Reply(results: List[Result] = Nil)
 
-  given JsonValueCodec[Request] = Codecs.make
+  given JsonValueCodec[Request] = forecastbench.domain.Wire.make
   given JsonValueCodec[Reply]   = Codecs.make
 
   /** A reply's results in Exa's order; a date Exa gives that cannot be read is left undated. */

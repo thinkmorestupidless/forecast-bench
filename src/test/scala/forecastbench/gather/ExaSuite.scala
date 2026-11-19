@@ -32,3 +32,15 @@ class ExaSuite extends munit.FunSuite:
       Exa(None, 2000).search("q", None, 10),
       Left(SearchFailed("exa", "EXA_API_KEY is not set"))
     )
+
+  test("a search with no pretended time sends no end date, and one with it sends it"):
+    import com.github.plokhotnyuk.jsoniter_scala.core.writeToString
+    val none = writeToString(Exa.Request("q", 10, "auto", None, Exa.Contents(Exa.Text(2000))))
+    assertEquals(
+      none,
+      """{"query":"q","numResults":10,"type":"auto","contents":{"text":{"maxCharacters":2000}}}"""
+    )
+    val some = writeToString(
+      Exa.Request("q", 10, "auto", Some("2025-05-01T00:00:00Z"), Exa.Contents(Exa.Text(2000)))
+    )
+    assert(some.contains(""""endPublishedDate":"2025-05-01T00:00:00Z""""), some)
