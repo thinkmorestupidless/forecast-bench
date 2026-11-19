@@ -59,8 +59,10 @@ object BenchService:
     Seq(ProjectionRuntime(), timers, http)
 
 /**
- * Locally this needs Postgres (`just up`). In an ankka deployment the platform provides the
- * database and every `ANKKA_*` variable.
+ * Locally this needs Postgres (`just up`), and the reasoning stack (`just reasoning-up`) for the
+ * graph and prose arms. In an ankka deployment the platform provides the database and every
+ * `ANKKA_*` variable. The venues need no key; without `ANTHROPIC_API_KEY` or `EXA_API_KEY` the
+ * service still starts, and each call that needs the key fails, naming it.
  */
 @main def run(): Unit =
   val settings = Settings.load()
@@ -68,7 +70,10 @@ object BenchService:
     Edges(
       Clock.system,
       settings,
-      venues = Map.empty,
+      venues = Map(
+        "kalshi"     -> forecastbench.venues.Kalshi(),
+        "polymarket" -> forecastbench.venues.Polymarket()
+      ),
       Models.fromSettings(settings),
       forecastbench.gather.Exa.fromEnv(settings.limits.excerpt)
     )
