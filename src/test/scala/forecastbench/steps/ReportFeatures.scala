@@ -16,12 +16,6 @@ class ReportFeatures
 
   override val munitTimeout = 8.minutes
 
-  override protected def pending = Set(
-    // T072: development cohorts.
-    "a report of a development cohort says on its face that it shows nothing",
-    "a report over several cohorts leaves out development cohorts"
-  )
-
   /** What an arm answers for a question of the scenario. */
   private enum Answer:
     case P(p: Double)
@@ -119,7 +113,7 @@ class ReportFeatures
     )
 
   /** The cohort's runs as the view the report reads holds them. */
-  private def listed(cohort: String = november): List[ujson.Value] =
+  private def listed(cohort: String): List[ujson.Value] =
     json(ok(get(s"/runs?cohort=$cohort"))).arr.toList
 
   /**
@@ -606,4 +600,79 @@ class ReportFeatures
     val r = figures
     assertEquals(r("nothingKnown").str, "nothing is known yet")
     assertEquals(r("questions")("waiting").num.toInt, 5)
+  }
+
+  /**
+   * A development cohort of six questions its venue resolved before they were imported, forecast by
+   * the model alone; its scored runs, once the bench has scored every one of them.
+   */
+  private def development(name: String): String =
+    val id = draft(
+      name,
+      standing = "development",
+      pretended = Some(fixture.clock.now.minus(Duration.ofDays(90)))
+    )
+    settle(id, Nil, List("model-alone"), budget = "10000.00")
+    val qs = (1 to 6).toList.map(i => s"d$i")
+    qs.foreach { q =>
+      val venueId = world.venueId(q)
+      val closes  = fixture.clock.now.minus(Duration.ofDays(30))
+      fixture.kalshi.list(ScriptedVenue.question(venueId, statement(q), closes))
+      val outcome = if q.drop(1).toInt % 2 == 0 then OutcomeValue.Yes else OutcomeValue.No
+      fixture.kalshi.resolve(venueId, outcome, closes.plus(Duration.ofDays(1)))
+    }
+    fixture.kalshi.only = Some(s"s${world.n}-d")
+    try
+      ok(post("/venues/kalshi/import", """{"standing":"development","onePerEvent":false}""")): Unit
+    finally fixture.kalshi.only = None
+    val ids = qs.map { q =>
+      val qid = Ids.question("kalshi", world.venueId(q))
+      world.held(s"question:$q") = qid
+      qid
+    }
+    ok(post(s"/cohorts/$id/questions", ujson.write(ujson.Obj("questions" -> ids)))): Unit
+    answering((_, _) => Answer.P(0.6))
+    forecastAll(id)
+    // Each run has a forecast and an outcome already held, so each is scored.
+    eventually("every development run to be scored", 3.minutes) {
+      val rows = listed(id)
+      Option.when(rows.size == qs.size && rows.forall(_("scores").arr.nonEmpty))(())
+    }
+    id
+
+  Given("a frozen development cohort {string} with scored runs") { (name: String) =>
+    development(name): Unit
+  }
+
+  When("the experimenter asks for the report of the cohort {string}") { (name: String) =>
+    world.last = get(s"/cohorts/${world.cohort(name)}/report")
+  }
+
+  Then("the report is marked {string}") { (marking: String) =>
+    val r = figures
+    assertEquals(r("marking").str, marking)
+    assert(r("development").bool)
+    assertEquals(r("questions")("scored").num.toInt, 6)
+    val page = ok(get(s"/cohorts/${r("cohorts").arr.head.str}/report.md"))
+    assert(page.linesIterator.take(5).exists(_.contains(marking)), page)
+  }
+
+  Given("the prospective cohort {string} and a development cohort {string}") {
+    (p: String, d: String) =>
+      assertEquals(world.cohort(p), november)
+      scoredQuestions(6, (_, _) => Answer.P(0.6), yesOrNo): Unit
+      val rehearsal = development(d)
+      world.held("cohorts") = s"$november,$rehearsal"
+  }
+
+  Then("the report counts the cohort {string} only") { (name: String) =>
+    val r = figures
+    assertEquals(r("cohorts").arr.map(_.str).toList, List(world.cohort(name)))
+    assertEquals(r("questions")("questions").num.toInt, 6)
+    assert(!r("development").bool)
+  }
+
+  Then("it says the cohort {string} was left out as development") { (name: String) =>
+    val left = figures("leftOut").arr.map(l => l("cohort").str -> l("reason").str).toList
+    assertEquals(left, List(world.cohort(name) -> "development: the model may know these outcomes"))
   }

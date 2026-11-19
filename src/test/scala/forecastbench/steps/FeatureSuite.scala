@@ -10,34 +10,11 @@ import scala.concurrent.duration.*
 /**
  * One feature file run against the whole bench through its routes (research R14).
  *
- * `pending` names the scenarios of the file whose steps a later task binds: they are reported as
- * ignored, never passed, and the name must be a scenario of the file. The feature file itself is
- * never tagged.
+ * The feature file itself is never tagged: every scenario of it is bound.
  */
 abstract class FeatureSuite(feature: String) extends GherkinSuite(feature):
 
   override val munitTimeout = 3.minutes
-
-  /** Scenarios whose steps are bound by a later task, by name. */
-  protected def pending: Set[String] = Set.empty
-
-  override def munitTests(): Seq[Test] =
-    val tests = super.munitTests()
-    val stale = pending.filterNot(name => tests.exists(_.name.startsWith(name + " (")))
-    val marked = tests.map { t =>
-      if pending.exists(name => t.name.startsWith(name + " (")) then
-        t.withName(s"${t.name} is bound by a later task").tag(munit.Ignore)
-      else t
-    }
-    if stale.isEmpty then marked
-    else
-      val why = s"no scenario named ${stale.toVector.sorted.mkString("'", "', '", "'")}"
-      marked :+ new Test(
-        s"$feature holds every scenario its suite leaves pending",
-        () => scala.concurrent.Future.failed(AssertionError(why)),
-        Set.empty,
-        munit.Location.empty
-      )
 
   private var current: Option[(String, World)] = None
 
