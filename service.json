@@ -2,6 +2,12 @@
   "name": "forecast-bench",
   "service": {
     "image": "forecast-bench:latest",
-    "runtime": "0.18.0"
+    "runtime": "0.18.0",
+    "buckets": [
+      {
+        "name": "given",
+        "exposure": "private"
+      }
+    ]
   }
 }
