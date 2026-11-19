@@ -7,7 +7,13 @@ import com.thinkmorestupidless.ankka.testkit.AnkkaTestKit
 import forecastbench.BenchService
 import forecastbench.application.{Bench, Edges, Models, Settings}
 import forecastbench.report.Scoring
-import forecastbench.support.{ScriptedModel, ScriptedSearch, ScriptedVenue, TestClock}
+import forecastbench.support.{
+  ScriptedModel,
+  ScriptedReasoning,
+  ScriptedSearch,
+  ScriptedVenue,
+  TestClock
+}
 
 /**
  * One bench for the test JVM: the service's own components and routes under `AnkkaTestKit`, on a
@@ -33,6 +39,14 @@ object ServiceFixture:
 
   val search: ScriptedSearch = ScriptedSearch()
 
+  /** The reasoning service, played on loopback and called by name as the service calls it. */
+  val reasoning: ScriptedReasoning = ScriptedReasoning()
+
+  private lazy val reasoningServed =
+    val served = com.thinkmorestupidless.ankka.testkit.ScriptedService.start()
+    served.answer(r => reasoning.respond(r.method, r.path, r.body))
+    served
+
   val kalshi: ScriptedVenue     = ScriptedVenue("kalshi")
   val polymarket: ScriptedVenue = ScriptedVenue("polymarket")
 
@@ -55,7 +69,8 @@ object ServiceFixture:
     val server = HttpServer.at("127.0.0.1", 0)(BenchService.endpoints*)
     val kit = AnkkaTestKit.start(
       BenchService.components,
-      BenchService.extensions(TimerRuntime(), server)
+      BenchService.extensions(TimerRuntime(), server),
+      localServices = Map("reasoning" -> reasoningServed.address)
     )
     kit.declareBucket("given", BucketExposure.Private)
     sys.addShutdownHook(kit.stop())

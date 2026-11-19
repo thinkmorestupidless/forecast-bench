@@ -20,7 +20,10 @@ final case class QuestionPlan(
     instructions: Map[String, InstructionRef],
     runs: List[RunPlan],
     parent: Option[String],
-    /** Round 0 of a question, started at freeze: it gathers the pack and makes no run. */
+    /**
+     * Round 0 of a question, started at freeze: it gathers the pack, appraises it when the cohort
+     * names the graph or the prose arm, and makes no run.
+     */
     gather: Boolean = false
 )
 
@@ -245,6 +248,53 @@ final class QuestionForecast(context: WorkflowContext) extends Workflow[Question
           if pack.empty then PackNote.Empty else PackNote.Gathered
         case Left(why) => PackNote.Failed(why)
       cohort.call(CohortEntity.notePack).invoke(NotePack(plan.question, note, now)): Unit
+    stepEffects.updateState(currentState).thenTransitionTo(QuestionForecast.appraising.ref)
+
+  private def appraisalId = Ids.appraisal(plan.cohort, plan.question)
+
+  private def heldAppraisal: AppraisalState =
+    client.forEventSourcedEntity(EntityId(appraisalId)).call(AppraisalEntity.get).invoke()
+
+  /**
+   * The question's appraisal (research R7), made once, for a cohort that names the graph or the
+   * prose arm and a pack with documents. Made or failed, it is held; an arm reading it waits for
+   * it.
+   */
+  def appraiseStep: StepEffect =
+    val held   = cohort.call(CohortEntity.get).invoke().cohort.get
+    val wanted = held.arms.exists(Appraised.contains)
+    val pack   = heldPack.filterNot(_.empty)
+    if wanted && pack.isDefined && !heldAppraisal.held then
+      val q = question
+      val asked =
+        QuestionGiven(q.statement, q.criteria, q.closesAt, plan.pretendedTime.getOrElse(now))
+      def instruction(name: String) = plan.instructions
+        .get(name)
+        .flatMap(r => Instructions.at(name, r.version))
+        .orElse(Instructions.latest(name))
+        .get
+      val result = forecastbench.reasoning.Appraiser.appraise(
+        forecastbench.reasoning.Appraise(
+          plan.cohort,
+          plan.question,
+          asked,
+          pack.get,
+          plan.model,
+          held.repetitions,
+          now
+        ),
+        Bench.edges.models,
+        forecastbench.reasoning.Reasoning(context.services("reasoning")),
+        instruction("appraisal-reader"),
+        instruction("appraisal-open-points")
+      )
+      val entity = client.forEventSourcedEntity(EntityId(appraisalId))
+      try
+        result.fold(
+          f => entity.call(AppraisalEntity.fail).invoke(f),
+          m => entity.call(AppraisalEntity.make).invoke(m)
+        ): Unit
+      catch case e: CommandError if e.code == ErrorCode.Conflict => ()
     stepEffects.updateState(currentState).thenTransitionTo(QuestionForecast.finish.ref)
 
   /** Tells the cohort's workflow this question is done, and ends. */
@@ -328,10 +378,14 @@ object QuestionForecast
   def create(context: WorkflowContext) = new QuestionForecast(context)
 
   val gathering  = step("gather")(_.gatherStep)
-  val refresh    = step("refresh")(_.refreshStep)
-  val venuePrice = step("venue-price")(_.venuePriceStep)
-  val model      = step("model-alone")(_.modelStep)
-  val evidence   = step("evidence")(_.modelStep)
+  val appraising = step("appraise")(_.appraiseStep)
+
+  /** The arms that read the appraisal. */
+  val Appraised: Set[String] = Set("graph", "prose")
+  val refresh                = step("refresh")(_.refreshStep)
+  val venuePrice             = step("venue-price")(_.venuePriceStep)
+  val model                  = step("model-alone")(_.modelStep)
+  val evidence               = step("evidence")(_.modelStep)
 
   /** How long an arm that takes evidence waits before it looks for its pack again. */
   val PackWait: FiniteDuration = 2.seconds
