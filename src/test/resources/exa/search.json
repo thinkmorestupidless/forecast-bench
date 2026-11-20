@@ -1,0 +1,25 @@
+{
+  "requestId": "b5947044c4b78efa9552a7c89b306d95",
+  "resolvedSearchType": "neural",
+  "results": [
+    {
+      "title": "Central bank holds rates steady",
+      "url": "https://www.news.example/economy/rates-hold",
+      "publishedDate": "2026-11-12T00:00:00.000Z",
+      "author": "A Reporter",
+      "id": "https://www.news.example/economy/rates-hold",
+      "favicon": "https://www.news.example/favicon.ico",
+      "text": "The central bank held its rate at its November meeting."
+    },
+    {
+      "title": "What the markets expect",
+      "url": "https://blog.example/markets",
+      "publishedDate": null,
+      "author": null,
+      "id": "https://blog.example/markets",
+      "text": "Traders price a cut by spring."
+    }
+  ],
+  "searchTime": 812.4,
+  "costDollars": { "total": 0.007, "search": { "neural": 0.005 }, "contents": { "text": 0.002 } }
+}

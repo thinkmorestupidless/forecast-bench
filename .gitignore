@@ -4,3 +4,8 @@ target/
 .idea/
 # The directory store a service keeps its objects in on this machine (ankka local).
 .ankka/
+
+# Local secrets, sourced by hand: never committed.
+.env.local
+.env
+.DS_Store

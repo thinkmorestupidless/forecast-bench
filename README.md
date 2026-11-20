@@ -1,150 +1,85 @@
 # forecast-bench
 
-A [ankka](https://github.com/thinkmorestupidless/ankka) service. The stub domain is an `Item` with a
-name and a count: one event sourced entity (`application/ItemEntity.scala`), one HTTP endpoint
-(`api/ItemEndpoint.scala`), one view for listing (`application/ItemRows.scala`), and a test at each
-level. Replace the domain; keep the shape.
+An instrument for one question: is a probability forecast made from explicitly structured reasoning
+(hypotheses, the claims that support and contradict them, the points the evidence leaves open)
+better calibrated than one made from the same reasoning written out as prose?
 
-Needs: JDK 21, sbt, Docker.
+The bench imports questions about the future from public venues (Kalshi and Polymarket), fixes a
+set of them and the ways of answering them into a cohort, has each arm forecast each question
+before its outcome exists, keeps every forecast unchangeably with everything it was given, reads the
+outcomes from the venues, scores the forecasts, and reports what has been shown, with the number of
+questions behind every figure and a plain statement of what has not been shown yet.
+
+It is an [ankka](https://github.com/thinkmorestupidless/ankka) service in Scala. Questions, cohorts,
+runs and outcomes are journaled, and the journal is the audit trail.
+
+## The five arms
+
+| Arm | Forecasts from |
+|---|---|
+| `venue-price` | the venue's own probability: the middle of its bid and ask, else its last price |
+| `model-alone` | the model, given the question's statement, criteria, close time and the time now |
+| `evidence` | the model, given that and an evidence pack of documents gathered by search |
+| `graph` | the model, given that and one appraisal of the pack as structure: the case for, the case against, the open points |
+| `prose` | the model, given that and the same appraisal written as one passage |
+
+The graph and prose arms read one appraisal and differ in shape and in nothing else; the bench
+checks that both texts hold the same content before either model is called. Their comparison is
+what the report leads with. The other arms are the baselines a later arm is measured against.
+
+## Run a cohort
+
+Needs JDK 21, sbt, Docker, `jq` and [`just`](https://github.com/casey/just) (every recipe is one
+command and works without it). `ANTHROPIC_API_KEY` for the model and `EXA_API_KEY` for the search;
+without them the service starts and each call that needs one fails, naming it.
+
+```bash
+just up             # Postgres with ankka's schema
+just reasoning-up   # the reasoning service on :9100, with its Postgres, Kafka, Neo4j and graph sink
+just run            # the bench on :9000
+
+just import kalshi development '{"categories":["Economics"],"limit":20}'
+just cohort rehearsal development claude-opus-5-5 '{"pretendedTime":"2026-10-01T00:00:00Z"}'
+just add rehearsal '{"select":{"venue":"kalshi","limit":20}}'
+just arms rehearsal venue-price model-alone evidence graph prose
+just settings rehearsal '{"window":{"from":"<now>","to":"<in two hours>"},"repetitions":1,"budget":10}'
+just freeze rehearsal     # gathers the evidence packs
+just forecast rehearsal
+just report rehearsal     # a development cohort's report is marked as showing nothing
+```
+
+A prospective cohort is the same with `prospective` questions and no pretended time; its outcomes
+arrive on the hour, or at once with `just outcomes`. `specs/001-forecast-evaluation/quickstart.md`
+walks through both, and through checking each of the feature's guarantees by hand.
+
+If the reasoning image cannot be pulled, `just reasoning-image` builds it from a sibling checkout of
+`ankka-reasoning` at its release tag.
 
 ## Test
 
 ```bash
-sbt test
+just test    # every scenario of features/ through the real routes, with scripted model, search,
+             # venues and reasoning service; a throwaway Postgres in Docker
+just check   # the features, the glossary and the spec hold together: 0 findings
+just live    # three development questions from Kalshi, all five arms, real edges; spends money
 ```
 
-`ItemEntitySuite` runs with no runtime at all; the other two start a throwaway Postgres in Docker.
+## Where things are
 
-## Run locally
-
-```bash
-sbt schema                # ankka's database schema, extracted from the ankka-runtime artifact into target/ddl
-docker compose up -d      # Postgres, initialised from target/ddl
-sbt run                   # http://localhost:9000
-
-curl -XPOST localhost:9000/items/i1 -H 'content-type: application/json' -d '{"name":"Widget","count":2}'
-curl localhost:9000/items/i1
-curl localhost:9000/items/
-```
-
-Postgres applies its init directory only to an empty volume: after `sbt schema` changes anything,
-`docker compose down -v` first.
-
-## See what it is doing
-
-```bash
-ankka local console       # http://localhost:9889
-```
-
-Lists every ankka service running on this machine, this one included, and for each: its registered
-components, a form per HTTP route so you can send a request without leaving the page, and the trace
-of each request it served — which components it went through, how long each took, and how much of
-the elapsed time the platform cannot account for. That last figure is usually the interesting one.
-
-The console also reads an entity's state, through the queries a component declares for itself
-(`get-item` on `ItemEntity`). It will not run a command — `add-item` is refused — because
-`query` accepts only a `ReadOnlyEffect`, so
-"cannot persist" is the compiler's guarantee rather than a rule the console enforces.
-
-It is local-only — loopback, no credential. For a service deployed to a platform, `ankka services
-logs` is the equivalent.
-
-## Work with a coding agent
-
-This project carries ankka's documentation for the version it was made with, as Agent Skills in
-`.claude/skills/`, and a `.mcp.json` that starts `ankka mcp`: the CLI's commands, the services running
-on this machine and the same documentation, as tools. Claude Code reads both with no configuration; it
-asks once before starting the project's MCP server. The `ankka` CLI must be on your `PATH`.
-
-For Claude Desktop, or for Claude Code in every project rather than this one:
-
-```bash
-ankka mcp install --client desktop      # Claude Desktop; quit and reopen it afterwards
-ankka mcp install                       # Claude Code, for you, in every project
-```
-
-## Build the image
-
-```bash
-sbt Docker/publishLocal   # forecast-bench:<version> and forecast-bench:latest, in the local Docker daemon
-```
-
-## Deploy to an ankka platform
-
-`service.json` is the descriptor `ankka services apply` takes. It names the image above and the
-ankka version this service was built against; the platform checks that version against its own.
-
-```bash
-kind load docker-image forecast-bench:latest --name ankka   # a local kind cluster; push to a registry otherwise
-ankka services apply -f service.json
-ankka services list                              # Ready
-ankka services expose forecast-bench
-curl --cacert ~/.ankka/local-ca.crt https://forecast-bench-<project>.127.0.0.1.sslip.io:8443/items/i1
-```
-
-The `curl` shown is for a local cluster deployed with ankka's `deploy-local.sh`, whose root
-certificate is at `~/.ankka/local-ca.crt` and whose base domain is `127.0.0.1.sslip.io`; on any
-other platform, use the URL `ankka services expose` prints and that platform's root.
-
-**Before exposing:** `ItemEndpoint` declares `acl = Acl.AllowAll`. Exposure changes who can *reach*
-the endpoint, not who is *allowed* to — an exposed `AllowAll` endpoint on a real platform is on the
-internet.
-
-## Deploy from GitHub
-
-This project carries two workflows. `.github/workflows/ci.yml` builds and tests on every push and
-pull request, and needs nothing configured. `.github/workflows/deploy.yml` builds the image, pushes
-it to this repository's GitHub Container Registry, and deploys — on a version tag, or when you run it
-by hand. Until its secrets exist it declines to run rather than failing, so the first push is green.
-
-Four repository secrets, under **Settings → Secrets and variables → Actions**:
-
-| Secret | Value | Where it comes from |
-|---|---|---|
-| `ANKKA_URL` | the control plane's address | `ankka config get url` |
-| `ANKKA_TOKEN` | a deploy token | `ankka organizations tokens create <org> --label github` |
-| `ANKKA_PROJECT` | the project to deploy into | `ankka projects list` |
-| `ANKKA_CA` | optional: the platform's certificate authority, as PEM | `cat ~/.ankka/local-ca.crt`, for a platform whose certificate is not publicly trusted |
-
-A deploy token is a credential a machine can hold. It is shown once, it acts as a **member** of that
-organization — it can deploy, pause and restart services, and it cannot manage members or other
-tokens — and `ankka organizations tokens revoke` stops it.
-
-The cluster has to be able to *pull* the image. A GHCR package is private by default, so either make
-the package public, or register the registry for the project once:
-
-```bash
-ankka projects registry set <project> --server ghcr.io --username <github user> --password <a read:packages token>
-```
-
-Then tag a release:
-
-```bash
-git tag v0.1.0 && git push --tags
-```
-
-The workflow deploys to `Ready`. It does not expose the service: making it publicly reachable is your
-decision, taken once with `ankka services expose forecast-bench`, and it survives every later
-deploy.
+- `specs/001-forecast-evaluation/`: the specification, the plan, the research and its decisions,
+  the data model, the contracts, the tasks.
+- `features/`: the living behaviour, one directory per capability, in the words of `GLOSSARY.md`.
+- `docs/limitations.md`: what the bench does not do, and what is not proven.
+- `notes/`: what the bench asks of ankka and of the reasoning service.
+- `CLAUDE.md`: the repository's three rules and its traps.
 
 ## Commits and pull requests
 
-Commit messages are [Conventional Commits](https://www.conventionalcommits.org/en/v1.0.0/):
-`<type>(<scope>): <description>`, as in `feat(orders): reserve stock when an order is placed`, with
-`!` and a `BREAKING CHANGE:` footer when a change breaks an event, a wire format or an API.
-`.githooks/commit-msg` refuses anything else and says what to write; enable it once per clone:
-
-```bash
-git config core.hooksPath .githooks
-```
-
-CI runs the same check over every commit of a pull request, and over its title: the title is the
-same kind of header, because the squash merge makes it the commit on `main`. The description follows
-`.github/pull_request_template.md` (why, what changed, what is left out, how it is tested, risk and
-rollback) in under about three hundred words; the detail goes in a design note or the docs, linked.
+Commit messages are [Conventional Commits](https://www.conventionalcommits.org/en/v1.0.0/);
+`.githooks/commit-msg` refuses anything else (`just hooks` enables it once per clone). A pull
+request's description follows `.github/pull_request_template.md`.
 
 ## Upgrading ankka
 
-The ankka version lives in two places that must move together: `ankkaVersion` in `build.sbt` (the
-artifacts this build resolves) and `runtime` in `service.json` (what the platform checks). Then
-`sbt schema` and `docker compose down -v && docker compose up -d` for the local database.
+The ankka version lives in two places that move together: `project/Dependencies.scala` and
+`runtime` in `service.json`. Then `sbt schema` and `just down && just up` for the local database.

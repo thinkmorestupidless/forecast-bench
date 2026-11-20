@@ -1,0 +1,104 @@
+package forecastbench.gather
+
+import java.time.Instant
+import scala.jdk.CollectionConverters.*
+
+class ExaSuite extends munit.FunSuite:
+
+  private def reply(name: String) =
+    scala.io.Source.fromResource(s"exa/$name").mkString
+
+  test("a reply's results are read in order, the source from the address"):
+    val results = Exa.decode(reply("search.json")).toOption.get
+    assertEquals(
+      results.map(_.address),
+      List("https://www.news.example/economy/rates-hold", "https://blog.example/markets")
+    )
+    assertEquals(results.map(_.source), List("news.example", "blog.example"))
+    assertEquals(results.head.publishedAt, Some(Instant.parse("2026-11-12T00:00:00Z")))
+    assertEquals(results.head.title, "Central bank holds rates steady")
+    assertEquals(results.head.text, "The central bank held its rate at its November meeting.")
+
+  test("a result with no published time is undated"):
+    assertEquals(Exa.decode(reply("search.json")).toOption.get(1).publishedAt, None)
+
+  test("a reply with no results finds nothing"):
+    assertEquals(Exa.decode(reply("empty.json")), Right(Nil))
+
+  test("a reply that is not Exa's says so"):
+    assert(Exa.decode("<html>").left.exists(_.startsWith("Exa's reply could not be read")))
+
+  test("with no key every search fails, saying so, and nothing is sent"):
+    assertEquals(
+      Exa(None, 2000).search("q", None, 10),
+      Left(SearchFailed("exa", "EXA_API_KEY is not set"))
+    )
+
+  test("a search with no pretended time sends no end date, and one with it sends it"):
+    import com.github.plokhotnyuk.jsoniter_scala.core.writeToString
+    val none = writeToString(Exa.Request("q", 10, "auto", None, Exa.Contents(Exa.Text(2000))))
+    assertEquals(
+      none,
+      """{"query":"q","numResults":10,"type":"auto","contents":{"text":{"maxCharacters":2000}}}"""
+    )
+    val some = writeToString(
+      Exa.Request("q", 10, "auto", Some("2025-05-01T00:00:00Z"), Exa.Contents(Exa.Text(2000)))
+    )
+    assert(some.contains(""""endPublishedDate":"2025-05-01T00:00:00Z""""), some)
+
+  /** A loopback Exa answering each search with the next status, then the recorded reply. */
+  private def answering(statuses: Int*)(check: (Exa, () => List[Long]) => Unit): Unit =
+    answeringAfter("3", statuses*)(check)
+
+  /** As `answering`, the last refusal asking Exa's pause of `retryAfter` seconds. */
+  private def answeringAfter(retryAfter: String, statuses: Int*)(
+      check: (Exa, () => List[Long]) => Unit
+  ): Unit =
+    val left = java.util.concurrent.ConcurrentLinkedQueue[Int](statuses.toList.asJava)
+    val server =
+      com.sun.net.httpserver.HttpServer.create(java.net.InetSocketAddress("127.0.0.1", 0), 0)
+    server.createContext(
+      "/search",
+      ex =>
+        val status = Option(left.poll()).getOrElse(200)
+        val body   = (if status == 200 then reply("search.json") else "{}").getBytes("UTF-8")
+        if status == 429 && left.isEmpty then ex.getResponseHeaders.add("Retry-After", retryAfter)
+        ex.sendResponseHeaders(status, body.length.toLong)
+        ex.getResponseBody.write(body)
+        ex.close()
+    )
+    server.start()
+    val paused = java.util.concurrent.ConcurrentLinkedQueue[Long]()
+    try
+      val exa = Exa(
+        Some("k"),
+        2000,
+        pause = ms => paused.add(ms): Unit,
+        endpoint = s"http://127.0.0.1:${server.getAddress.getPort}/search"
+      )
+      check(exa, () => paused.asScala.toList)
+    finally server.stop(0)
+
+  test("a 429 or a 5xx is asked again after a pause that doubles, or Exa's Retry-After"):
+    answering(429, 503, 429) { (exa, paused) =>
+      assertEquals(exa.search("q", None, 10).map(_.size), Right(2))
+      assertEquals(paused(), List(1000L, 2000L, 3000L))
+    }
+
+  test("a Retry-After longer than the longest pause waits the longest pause"):
+    answeringAfter("3600", 429) { (exa, paused) =>
+      assertEquals(exa.search("q", None, 10).map(_.size), Right(2))
+      assertEquals(paused(), List(Exa.MaxPauseMs))
+    }
+
+  test("a search Exa keeps refusing fails after its attempts, saying how Exa answered"):
+    answering(List.fill(Exa.Attempts)(429)*) { (exa, paused) =>
+      assertEquals(exa.search("q", None, 10), Left(SearchFailed("exa", "Exa answered 429")))
+      assertEquals(paused().size, Exa.Attempts - 1)
+    }
+
+  test("a refusal that is not a limit is not asked again"):
+    answering(401) { (exa, paused) =>
+      assertEquals(exa.search("q", None, 10), Left(SearchFailed("exa", "Exa answered 401")))
+      assertEquals(paused(), Nil)
+    }

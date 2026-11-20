@@ -1,9 +1,8 @@
 // forecast-bench — an ankka service.
 //
-// ankka's libraries come from Maven Central (or ~/.ivy2/local while the platform is being
-// developed). The same version is declared in service.json as `runtime`: change both together
-// when upgrading — see README.md, "Upgrading ankka".
-val ankkaVersion = "0.17.0"
+// ankka's libraries come from Maven Central; every version is in project/Dependencies.scala. The
+// ankka version is also declared in service.json as `runtime`: change both together.
+import Dependencies.*
 
 // The service name is also the image name, the descriptor's name, and — once exposed — the first
 // label of the hostname, so it has to be one Kubernetes and DNS accept. Checked here so that a
@@ -23,30 +22,34 @@ val serviceNameChecked: String = {
 
 // For the whole build, so a subproject added beside the service — the generated code of a gRPC
 // service definition, say — is built with the same Scala version.
-ThisBuild / scalaVersion := "3.9.0"
+ThisBuild / scalaVersion := V.scala
+
+// Tests are serialised: each suite starts a service and a database. Do not optimise this back.
+Global / concurrentRestrictions += Tags.limit(Tags.Test, 1)
 
 lazy val root = project
   .in(file("."))
   .enablePlugins(JavaAppPackaging, DockerPlugin)
   .settings(
-    name         := serviceNameChecked,
-    scalacOptions ++= Seq("-deprecation", "-feature", "-Wunused:all"),
+    name := serviceNameChecked,
+    scalacOptions ++= Seq("-deprecation", "-feature", "-Wunused:all", "-Wvalue-discard"),
     libraryDependencies ++= Seq(
-      "com.thinkmorestupidless" %% "ankka-sdk"     % ankkaVersion,
-      "com.thinkmorestupidless" %% "ankka-runtime" % ankkaVersion,
-      "com.thinkmorestupidless" %% "ankka-http"    % ankkaVersion,
+      ankkaSdk,
+      ankkaRuntime,
+      ankkaHttp,
+      ankkaAgent,
       // Exports this service's traces and metrics to the collector the installation names; with
       // none named it starts nothing. Nothing in the code names it.
-      "com.thinkmorestupidless" %% "ankka-telemetry-otlp" % ankkaVersion,
-      // "com.thinkmorestupidless" %% "ankka-agent" % ankkaVersion,   // agents: uncomment
-      // "com.thinkmorestupidless" %% "ankka-auth-oidc" % ankkaVersion,   // your users' tokens: uncomment
-      // "com.thinkmorestupidless" %% "ankka-mcp" % ankkaVersion,   // MCP endpoints: uncomment
-      "com.thinkmorestupidless" %% "ankka-testkit" % ankkaVersion % Test,
-      "org.scalameta"           %% "munit"         % "1.3.6"      % Test
+      ankkaTelemetry,
+      ankkaTestkit % Test,
+      munit        % Test,
+      ujson        % Test
     ),
     // The test kit starts a throwaway Postgres in Docker; a forked JVM keeps its lifecycle out of
     // sbt's own process.
-    Test / fork := true,
+    Test / fork              := true,
+    Test / parallelExecution := false,
+    Test / javaOptions ++= Seq("-Xmx2g"),
 
     // The version the image is tagged with. Locally sbt's own default; in CI the tag being
     // released, or the commit for a manual run — see .github/workflows/deploy.yml.
@@ -66,19 +69,25 @@ lazy val root = project
     // with `docker buildx build --platform <list> --push`, so one tag serves a cluster of either
     // architecture; the deploy workflow sets both. Building for the architecture this machine is not
     // needs buildx and QEMU (Docker Desktop and OrbStack have both).
-    dockerBuildxPlatforms := sys.env.get("ANKKA_IMAGE_PLATFORMS").toSeq.flatMap(_.split(',')).map(_.trim).filter(_.nonEmpty),
-    dockerBaseImage      := "eclipse-temurin:21-jre",
-    dockerUpdateLatest   := true,
-    dockerExposedPorts   := Seq(9000),
+    dockerBuildxPlatforms := sys.env
+      .get("ANKKA_IMAGE_PLATFORMS")
+      .toSeq
+      .flatMap(_.split(','))
+      .map(_.trim)
+      .filter(_.nonEmpty),
+    dockerBaseImage    := "eclipse-temurin:21-jre",
+    dockerUpdateLatest := true,
+    dockerExposedPorts := Seq(9000),
     // A Docker tag may not contain '+'; a git-derived snapshot version might.
-    Docker / version     := version.value.replace('+', '-')
+    Docker / version := version.value.replace('+', '-')
     // docs:end image
   )
 
 // The platform's database schema, taken out of the ankka-runtime artifact into target/ddl, where
 // docker-compose.yml mounts it as Postgres' init directory. One copy of the schema — the
 // runtime's — and nothing to keep in step: `sbt schema` after every ankka upgrade.
-lazy val schema = taskKey[File]("Writes ankka's database schema from the runtime artifact into target/ddl")
+lazy val schema =
+  taskKey[File]("Writes ankka's database schema from the runtime artifact into target/ddl")
 schema := {
   val log = streams.value.log
   val jar = (Compile / dependencyClasspath).value

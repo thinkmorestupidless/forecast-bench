@@ -1,5 +1,7 @@
 # Postgres for running forecast-bench locally: the event journal, snapshots, durable state,
-# view tables and projection offsets all live here.
+# view tables and projection offsets all live here. The `reasoning` profile adds the reasoning
+# service the graph and prose arms write to, with its graph tier: `just reasoning-up`. Every password
+# here is a local development value and nothing else.
 #
 # The schema comes from target/ddl, which `sbt schema` fills from the ankka-runtime artifact —
 # run that first. Postgres applies an init directory only when its data volume is empty, so after
@@ -21,6 +23,111 @@ services:
       interval: 5s
       timeout: 5s
       retries: 20
+
+  # The reasoning service's own database, with the schema of the ankka release reasoning is built on.
+  reasoning-postgres:
+    profiles: [reasoning]
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: ankka
+      POSTGRES_PASSWORD: ankka
+      POSTGRES_DB: ankka
+    ports:
+      - "5433:5432"
+    volumes:
+      - ./target/reasoning-ddl:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ankka -d ankka"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  # The reasoning service on :9100, publishing its graph deltas and answering from Neo4j.
+  reasoning:
+    profiles: [reasoning]
+    image: ${FORECAST_REASONING_IMAGE:-ghcr.io/thinkmorestupidless/ankka-reasoning:0.1.1}
+    depends_on:
+      reasoning-postgres:
+        condition: service_healthy
+      graph-topic:
+        condition: service_completed_successfully
+      neo4j:
+        condition: service_started
+    environment:
+      ANKKA_DB_HOST: reasoning-postgres
+      ANKKA_DB_PORT: "5432"
+      ANKKA_DB_NAME: ankka
+      ANKKA_DB_USER: ankka
+      ANKKA_DB_PASSWORD: ankka
+      ANKKA_KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      REASONING_NEO4J_URI: bolt://neo4j:7687
+      REASONING_NEO4J_USERNAME: neo4j
+      REASONING_NEO4J_PASSWORD: forecast-local-password
+    ports:
+      - "9100:9000"
+
+  kafka:
+    profiles: [reasoning]
+    image: apache/kafka:3.9.1
+    ports:
+      - "9094:9094"
+    environment:
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_LISTENERS: PLAINTEXT://:9092,CONTROLLER://:9093,EXTERNAL://:9094
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092,EXTERNAL://localhost:9094
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT,EXTERNAL:PLAINTEXT
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@localhost:9093
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "false"
+    healthcheck:
+      test: ["CMD-SHELL", "/opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092 --list >/dev/null 2>&1"]
+      interval: 5s
+      timeout: 10s
+      retries: 20
+
+  graph-topic:
+    profiles: [reasoning]
+    image: apache/kafka:3.9.1
+    depends_on:
+      kafka:
+        condition: service_healthy
+    restart: "no"
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - >
+        /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092 --create --if-not-exists
+        --topic reasoning-graph --partitions 3 --replication-factor 1
+        --config cleanup.policy=compact
+
+  neo4j:
+    profiles: [reasoning]
+    image: neo4j:5.26-community
+    ports:
+      - "7474:7474"
+      - "7687:7687"
+    environment:
+      NEO4J_AUTH: neo4j/forecast-local-password
+
+  # ankka-contrib's Neo4j graph sink, reading reasoning's delta topic into Neo4j.
+  graph-sink:
+    profiles: [reasoning]
+    image: ${FORECAST_SINK_IMAGE:-ghcr.io/thinkmorestupidless/ankka-graph-sink-neo4j:0.1.0}
+    depends_on:
+      graph-topic:
+        condition: service_completed_successfully
+      neo4j:
+        condition: service_started
+    environment:
+      ANKKA_KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      ANKKA_GRAPH_SINK_TOPIC: reasoning-graph
+      NEO4J_URI: bolt://neo4j:7687
+      NEO4J_USERNAME: neo4j
+      NEO4J_PASSWORD: forecast-local-password
 
 volumes:
   pgdata:
