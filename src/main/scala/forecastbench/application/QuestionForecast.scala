@@ -423,7 +423,8 @@ final class QuestionForecast(context: WorkflowContext) extends Workflow[Question
         Bench.edges.models,
         forecastbench.reasoning.Reasoning(context.services("reasoning")),
         instruction("appraisal-reader"),
-        instruction("appraisal-open-points")
+        instruction("appraisal-open-points"),
+        reply => GivenBucket.keep(context.storage, reply)
       )
       val entity = client.forEventSourcedEntity(EntityId(appraisalId))
       try

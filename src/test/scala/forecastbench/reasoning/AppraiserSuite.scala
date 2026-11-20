@@ -32,6 +32,9 @@ class AppraiserSuite extends munit.FunSuite:
   private val pack = Pack("november", "kalshi.rates", 1, now, Nil, docs, Usage.zero, BigDecimal(0))
   private val a    = Appraise("november", "kalshi.rates", asked, pack, model, 2, now)
 
+  /** Every reply the appraiser kept, by its digest. */
+  private val kept = scala.collection.concurrent.TrieMap[String, String]()
+
   private def run(m: ScriptedModel, r: ScriptedReasoning = ScriptedReasoning()) =
     val services = ScriptedServices().answer("reasoning")(q => r.respond(q.method, q.path, q.body))
     Appraiser.appraise(
@@ -39,7 +42,11 @@ class AppraiserSuite extends munit.FunSuite:
       Models.all(settings, m),
       Reasoning(services("reasoning")),
       Instructions.latest("appraisal-reader").get,
-      Instructions.latest("appraisal-open-points").get
+      Instructions.latest("appraisal-open-points").get,
+      reply =>
+        val ref = ObjectRef(Ids.sha256(reply), reply.getBytes("UTF-8").length.toLong)
+        kept(ref.sha256) = reply
+        ref
     )
 
   test("each document read, its claims checked and written, the open points held"):
@@ -74,6 +81,15 @@ class AppraiserSuite extends munit.FunSuite:
     assertEquals(failed.naming, Some("claim 1 of document [2]: Rates will fall"))
     assertEquals(r.all("claim"), Nil)
     assert(failed.cost > 0)
+    // The reply it failed on is kept, so what the model quoted can be read.
+    assert(
+      failed.answered.flatMap(a => kept.get(a.sha256)).exists(_.contains("words found nowhere"))
+    )
+
+  test("the reasoning service unreachable keeps no reply: no reply caused it"):
+    val r = ScriptedReasoning()
+    r.unreachable()
+    assertEquals(run(ScriptedModel(), r).swap.toOption.get.answered, None)
 
   test("a document that yields no claim gives none"):
     val m = ScriptedModel()

@@ -52,12 +52,16 @@ object Appraiser:
       models: Models,
       reasoning: Reasoning,
       reader: Instruction,
-      openPoints: Instruction
+      openPoints: Instruction,
+      keep: String => ObjectRef
   ): Either[AppraisalFailed, AppraisalMade] =
     var usage = Usage.zero
     var cost  = BigDecimal(0)
     def failed(reason: String, naming: Option[String]) =
       AppraisalFailed(reason, naming, usage, cost, a.now)
+    // A failure the reply caused keeps the reply, so what the model wrote can be read.
+    def failedOn(reply: String)(reason: String, naming: Option[String]) =
+      failed(reason, naming).copy(answered = Some(keep(reply)))
 
     def ask(system: String, user: String): Either[String, String] =
       val request =
@@ -95,11 +99,11 @@ object Appraiser:
               text <- reply.left.map(failed(_, Some(s"document [${d.n}]")))
               stated <- forecastbench.domain.Reply
                 .read[Stated](text)
-                .toRight(failed(NotClaims, Some(s"document [${d.n}]")))
+                .toRight(failedOn(text)(NotClaims, Some(s"document [${d.n}]")))
               ok <- Appraisal
                 .check(d, stated.claims)
                 .left
-                .map(r => failed(r.reason, Some(r.naming)))
+                .map(r => failedOn(text)(r.reason, Some(r.naming)))
             yield done ++ ok
         }
       // 3. The open points the claims leave.
@@ -108,7 +112,7 @@ object Appraiser:
         .flatMap(t =>
           forecastbench.domain.Reply
             .read[Open](t)
-            .toRight(failed(NotOpenPoints, Some("the open points")))
+            .toRight(failedOn(t)(NotOpenPoints, Some("the open points")))
         )
         .map(_.openPoints.map(_.trim).filter(_.nonEmpty))
       // 4. The records written, in order; each write is safe to send again.

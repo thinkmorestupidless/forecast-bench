@@ -28,13 +28,17 @@ final case class AppraisalMade(
     madeAt: Instant
 )
 
-/** An appraisal failed: why, the claim or call it names, and what it cost before it failed. */
+/**
+ * An appraisal failed: why, the claim or call it names, what it cost before it failed, and the
+ * model's reply it failed on, kept in the bucket `given`, when a reply was the cause.
+ */
 final case class AppraisalFailed(
     reason: String,
     naming: Option[String],
     usage: Usage,
     cost: BigDecimal,
-    at: Instant
+    at: Instant,
+    answered: Option[ObjectRef] = None
 )
 
 enum AppraisalEvent:
@@ -60,8 +64,48 @@ object Appraisal:
   val BadStatement = s"the claim's statement is not 1 to $MaxStatement characters"
   val Failed       = "the appraisal failed"
 
-  /** White space of any kind and length read as one space, and none at either end. */
-  def normalise(s: String): String = s.trim.split("\\s+").filter(_.nonEmpty).mkString(" ")
+  /**
+   * The typography a model may write plainly read as its plain form: curly and angled quotes,
+   * primes, dashes, the ellipsis and the non-breaking and thin spaces.
+   */
+  private val Plain: Map[Char, String] = Map(
+    '\u2018' -> "'",
+    '\u2019' -> "'",
+    '\u201a' -> "'",
+    '\u201b' -> "'",
+    '\u2032' -> "'",
+    '\u2039' -> "'",
+    '\u203a' -> "'",
+    '\u201c' -> "\"",
+    '\u201d' -> "\"",
+    '\u201e' -> "\"",
+    '\u201f' -> "\"",
+    '\u2033' -> "\"",
+    '\u00ab' -> "\"",
+    '\u00bb' -> "\"",
+    '\u2010' -> "-",
+    '\u2011' -> "-",
+    '\u2012' -> "-",
+    '\u2013' -> "-",
+    '\u2014' -> "-",
+    '\u2015' -> "-",
+    '\u2212' -> "-",
+    '\u2026' -> "...",
+    '\u00a0' -> " ",
+    '\u2009' -> " ",
+    '\u202f' -> " "
+  )
+
+  /**
+   * A text as a quote is matched (research R7): its typography plain, and white space of any kind
+   * and length read as one space, none at either end.
+   */
+  def normalise(s: String): String =
+    s.flatMap(c => Plain.getOrElse(c, c.toString))
+      .trim
+      .split("\\s+")
+      .filter(_.nonEmpty)
+      .mkString(" ")
 
   /** How a refused claim is named: its document and its place there, and its first words. */
   def naming(document: Document, k: Int, statement: String): String =

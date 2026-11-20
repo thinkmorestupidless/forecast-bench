@@ -21,6 +21,22 @@ class AppraisalSuite extends munit.FunSuite:
       Right(List((Stance.Supports, "Rates were held", "held rates in November")))
     )
 
+  test("a quote written with plain quotes, dashes and dots holds against a document's typography"):
+    val typeset = doc.copy(excerpt =
+      "\u201cI know people want it sooner,\u201d he said\u00a0\u2014 it\u2019s up to her\u2026"
+    )
+    val checked = Appraisal.check(
+      typeset,
+      List(
+        ReaderClaim(
+          "It is hers",
+          "supports",
+          "\"I know people want it sooner,\" he said - it's up to her..."
+        )
+      )
+    )
+    assert(checked.isRight, checked.toString)
+
   test("a claim whose quote is in no document of the pack fails, naming it"):
     val checked = Appraisal.check(
       doc,
