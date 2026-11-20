@@ -382,7 +382,15 @@ final class QuestionForecast(context: WorkflowContext) extends Workflow[Question
         .get
       val gathered = forecastbench.gather.Gatherer.gather(
         forecastbench.gather
-          .Gather(plan.cohort, plan.question, asked, plan.model, plan.pretendedTime, now),
+          .Gather(
+            plan.cohort,
+            plan.question,
+            asked,
+            plan.model,
+            plan.pretendedTime,
+            now,
+            cohort.call(CohortEntity.get).invoke().cohort.flatMap(_.gathererVersion).getOrElse(1)
+          ),
         edges.models,
         edges.search,
         instructions,

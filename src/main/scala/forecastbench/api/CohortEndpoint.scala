@@ -362,7 +362,7 @@ object CohortEndpoint:
       Forecasting(409, None, None, Some(why), notMade)
 
   /** The only gatherer and the only scoring method this feature has. */
-  val GathererVersion = 1
+  val GathererVersion = forecastbench.gather.Gatherer.Version
   val ScoringMethod   = 1
 
   /** Every set of instructions a cohort with these arms runs. */

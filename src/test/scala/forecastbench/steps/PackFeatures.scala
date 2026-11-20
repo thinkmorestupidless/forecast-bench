@@ -47,7 +47,7 @@ class PackFeatures extends FeatureSuite("features/evidence/pack.feature") with P
   Then("the pack names the gatherer's version, each search made and the time it was gathered") {
     () =>
       val p = json(ok(world.last))
-      assertEquals(p("gathererVersion").num.toInt, 1)
+      assertEquals(p("gathererVersion").num.toInt, forecastbench.gather.Gatherer.Version)
       assertEquals(p("searches").arr.map(_("query").str).head, statement("rates"))
       assertEquals(p("searches").arr.size, 3)
       assert(p("searches").arr.forall(_("results").arr.nonEmpty))

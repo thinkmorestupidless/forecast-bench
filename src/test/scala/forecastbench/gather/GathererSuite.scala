@@ -35,7 +35,7 @@ class GathererSuite extends munit.FunSuite:
     assertEquals(pack.searches.map(_.writtenBy), List("statement", model, model))
     assertEquals(pack.searches.head.results.size, 3)
     assertEquals(pack.documents.size, 9)
-    assertEquals(pack.gathererVersion, 1)
+    assertEquals(pack.gathererVersion, Gatherer.Version)
     assertEquals(pack.usage, Usage(1000, 200))
     assert(pack.cost > 0)
 

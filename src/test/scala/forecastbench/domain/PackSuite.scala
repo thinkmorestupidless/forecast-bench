@@ -58,3 +58,23 @@ class PackSuite extends munit.FunSuite:
       Some(t)
     )
     assertEquals(docs.map(_.address), List("https://before"))
+
+  test("from version 2, a document that names a venue in its title or excerpt is left out"):
+    val quoted = List(
+      f("https://news/odds", text = "Traders on KALSHI think there's a 59% chance."),
+      f("https://news/plain", text = "The company delayed its listing."),
+      Found(
+        "https://news/title",
+        "Polymarket bettors shift",
+        "news",
+        Some(t.minusSeconds(86400)),
+        "x"
+      ),
+      f("https://news/late", text = ("y" * 2000) + " polymarket.com")
+    )
+    assertEquals(
+      Pack.merge(List(quoted), 12, 2000, None).map(_.address),
+      List("https://news/plain", "https://news/late")
+    )
+    // A cohort frozen under version 1 gathers as version 1 did.
+    assertEquals(Pack.merge(List(quoted), 12, 2000, None, version = 1).size, 4)

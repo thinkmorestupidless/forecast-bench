@@ -16,7 +16,8 @@ final case class Gather(
     asked: QuestionGiven,
     model: String,
     pretended: Option[Instant],
-    now: Instant
+    now: Instant,
+    version: Int = Gatherer.Version
 )
 
 /**
@@ -26,7 +27,8 @@ final case class Gather(
  */
 object Gatherer:
 
-  val Version = 1
+  /** The gatherer's current version: what a cohort frozen now gathers by. */
+  val Version = 2
 
   final case class Queries(queries: List[String])
   private given JsonValueCodec[Queries] = Codecs.make
@@ -76,12 +78,13 @@ object Gatherer:
         found.map(_._3.map(r => Found(r.address, r.title, r.source, r.publishedAt, r.text))),
         limits.documents,
         limits.excerpt,
-        g.pretended
+        g.pretended,
+        g.version
       )
       Pack(
         g.cohort,
         g.question,
-        Version,
+        g.version,
         g.now,
         found.map((q, by, results) => SearchMade(q, by, results.map(_.address))),
         documents,
