@@ -119,3 +119,198 @@ edges, polish).
 - Project rules read: CLAUDE.md (the three rules and the traps), the workspace CLAUDE.md and the ankka brain's principles, plan.md's constitution check, contracts/arm.md, the PR template, `.githooks/commit-msg`. No REVIEW.md and no `.claude/rules/`.
 - Enforced by tooling and not reviewed: formatting (scalafmt 3.9.4 with a pre-commit hook and `scalafmtCheckAll` in CI); unused code and discarded values (`-Wunused:all`, `-Wvalue-discard`, warnings only, not `-Werror`); Conventional Commit headers (hook and CI `commits` job; every header parses).
 - Tests run: `sbt "testOnly forecastbench.domain.* forecastbench.report.* forecastbench.venues.*"`: 129 passed, 0 failed. Not run: the feature suites, which need Docker and take about ten minutes (`ReportFeatures` alone about six), and `just live`, which spends money and was excluded by instruction.
+
+## Second round
+
+# Review: the fixes to the first round (b8b60e5...HEAD on `001-forecast-evaluation`)
+
+**Verdict:** Request changes
+**What it does:** Answers the first round's 14 findings in seven commits. Every model text has the
+venues' names blinded, and gatherer version 2 leaves out documents that name a venue. Each workflow
+step fails over to an `abandon` step and has a timeout sized to the waits it bounds. Exa's pause is
+capped. A cohort's runs are read 32 at once. The report counts a run's cost once and refuses to mix
+scoring methods. The limitations page and research.md are updated from the rehearsal.
+**Should it exist:** yes. Each commit maps to a finding, and nothing outside the findings came in.
+**Read:** the whole diff of b8b60e5...HEAD (30 files). In full at HEAD:
+`application/QuestionForecast.scala`. Outside the diff: `domain/Arms.scala` (`document`, which
+gives the model the document's address), `domain/Cohort.scala` (`settling` and the `Settled`
+handler), `gather/Exa.scala` and `gather/Gatherer.scala` (to check the timeout arithmetic),
+`reasoning/Appraiser.scala` and `reasoning/Reasoning.scala` (the model calls, the graph writes),
+`contracts/arm.md`, `features/evidence/pack.feature`, `features/arms/arms.feature`, the Kalshi and
+Polymarket fixtures, and ankka's `WorkflowEngine.scala` (v0.18.0: a timed-out step's Future is not
+interrupted, and its late result is dropped as a "straggler").
+**Size:** 30 files, +593 / -86, all hand-written; 194 of those lines are docs. It is a set of
+targeted fixes, one commit per finding, so I do not ask for a split.
+
+### How each first-round resolution holds
+
+- Blocking 1 (the venue in the model's text): **holds, for the question's own text.** `Arm.block`
+  blinds the statement and the criteria. The gatherer (`Gatherer.scala`) and the appraisal reader
+  and open-points calls (`Appraiser.scala`) all build their user text from `Arm.block`. The guard can
+  now fail: `Blinded.check` first asserts that the recorded Kalshi replies do name the venue. Leaving
+  Polymarket out of that check is justified, because its fixtures name the venue only in image URLs.
+  Two gaps remain: the word-boundary match (Should fix) and the document's address (Blocking below).
+- Blocking 2 (the appraisal counted twice): **holds.** The new `ReportSuite` case fails against
+  the old sum. The recomputed research.md figures add up: 20 × (0.0115 + 0.0400) + 19 × (0.3069 +
+  0.3087) = $12.73.
+- Blocking 3 (a step outliving its timeout): **holds for the cases it drives, with one gap.** The
+  timeouts cover the waits I can add up: a model step needs about 410 s against 420 s, the
+  appraisal 360 s against 480 s, and the gathering 690 s against 720 s (a thin 30 s margin).
+  `FailoverFeatures` passes. The gap is that `abandon` is not safe against a timed-out step that is
+  still running, or one that failed after it settled (Should fix).
+- Should fix, limitations: **holds, except one sentence** that is now false (Should fix).
+- Should fix, `recorded`: **holds.** Not timed against a seeded 3,000-run cohort, as the
+  resolution says.
+- Should fix, Exa's `Retry-After`: **holds.** The 3600 s case is tested.
+- Should fix, the pull request description: left, which is acceptable. It still applies when the
+  PR is raised.
+- Nits: `isFailed`/`isAbstained`, `PackNote.failed` and the single `Left` branch **hold**. The
+  seven fix commits wrap their bodies; the review commit `5970ffa` does not (Nits).
+- Question, `Pack.scala`: **answered, but the filter misses the address** (Blocking).
+- Question, `ReportEndpoint`: **holds.** `methodOf` is tested at the unit level; the 422 route is
+  not driven by a test.
+- Question, research.md figures: **holds** (the arithmetic above).
+
+### Blocking
+
+- `src/main/scala/forecastbench/domain/Pack.scala:83` (with `domain/Arms.scala:31`): issue
+  (blocking): gatherer version 2 checks only the title and the excerpt for a venue's name, but
+  each document's address is also given to the evidence arm and the appraisal reader. The format is
+  `[n] <source>, <published>, <address>` (`Arms.document`, contracts/arm.md). A news page at
+  `…/polymarket-bettors-shift-odds` whose first 2,000 characters do not name the venue passes the
+  filter, and the arm is given the venue's name. That breaks the second rule and contracts/arm.md
+  ("nothing in any arm's text is … the venue's name"). The source is the address's host, so a host
+  such as `polymarketanalytics.com`, which is not under a venue host, is given the same way. The
+  `ArmsFeatures` guard cannot catch it: the scripted search's addresses never name a venue.
+  This is blocking now because it is cheap now. `CohortEndpoint.GathererVersion` is already 2, and a
+  frozen cohort gathers by its version, so once a cohort freezes under 2 the fix needs a version 3.
+  Suggestion: `namesVenue(f.address + " " + f.source + " " + f.title + " " + f.text.take(excerpt))`,
+  plus a `PackSuite` case with a venue name only in the address. Then confirm that no cohort on the
+  running bench is frozen under version 2, or bump to 3 if one is.
+  Resolved: version 2 checks the title, address, source and excerpt; no cohort on the running bench was frozen under version 2 (all three rehearsals are version 1), so it is corrected in place, with `PackSuite` cases for an address and a source, cfc3da9.
+
+### Should fix
+
+- `src/main/scala/forecastbench/application/QuestionForecast.scala:503-512` with
+  `src/main/scala/forecastbench/domain/Cohort.scala:355`: issue (non-blocking): `abandon` assumes
+  the failed step stopped before it recorded or settled. Two cases break that assumption:
+  - **The step timed out but is still running.** ankka does not interrupt a timed-out step: its
+    Future runs on, and only its result is dropped (`WorkflowEngine.onStepSucceeded`, "a straggler").
+    `abandon` finds the reservation, records a blank failed run and settles the reservation. The
+    straggler's own `record` then gets `Conflict`, which is swallowed. It still calls `settle`, and
+    `Settled` adds to `spent` whether or not a reservation is held, so the spend is counted twice.
+    For a graph run, `believe` then writes a belief to the reasoning graph for a run the journal
+    records as failed. A timed-out gathering behaves the same way: its late `notePack(Gathered)`
+    overwrites the `Failed` note that `abandon` wrote, after some arms were already noted not made.
+  - **The step failed after it settled** (for example, the `CohortEntity.note` call in `believe`
+    threw). `abandon` finds no reservation and notes as not made a run that is already recorded.
+
+  The timeouts make the first case rare, and it errs towards stopping early. It still leaves the
+  journal, the budget and the graph disagreeing about one run. Confirming it needs a run with a
+  step held past its timeout; the code path is what I read.
+  Suggestion: make `settling` refuse, or ignore, a run with no reservation, so a second settle
+  changes nothing. In `abandon`, read the run entity first: if the run is recorded, move on with
+  `next(made(run, runId))` and settle only a reservation that is still held. Give `notingPack` the
+  same "first note wins" rule for a pack already noted. If this is left as it is, name it in
+  limitations.md under "A step that fails is settled".
+  Resolved: a settle with no reservation and a second pack note change nothing (`CohortSuite`); `record` says whether this call recorded the run, and a belief is written only then; `abandon` reads the run first and leaves a recorded run as it stands, 1b8c4a4. The late-step timing itself is not driven by a scenario.
+
+- `docs/limitations.md:59-60`, `features/evidence/pack.feature`, `contracts/arm.md:24-31`: issue
+  (non-blocking): the documents have not followed the two behaviour changes.
+  - The limitations page still says "a news page in a pack that quotes a venue's odds is not
+    filtered (only the venues' own pages are)". Since ee7b21f that is true only of a cohort frozen
+    under version 1.
+  - The living features have no scenario saying that a document naming a venue is left out.
+    CLAUDE.md says `features/` is where the living behaviour is written.
+  - The arm contract still shows `Question: <statement>` with nothing about the blinding.
+
+  Suggestion: reword the limitations entry to cover version 1 cohorts and the address once the
+  blocking finding is fixed. Add a pack scenario such as "a document that names a venue is left
+  out of the pack", with its step and glossary words, and keep `just check` at 0. Add one line to
+  arm.md saying the statement and criteria have the venues' names read as "the venue" and their
+  addresses removed.
+  Resolved: the limitations sentence, a living scenario "a pack holds no document that names a venue" referenced from spec.md, and the blinding in contracts/arm.md, cfc3da9 and the commit with this report.
+
+- `src/main/scala/forecastbench/domain/Arm.scala:59`: suggestion (non-blocking, if-minor): the
+  name is matched as `\b(?:Kalshi|Polymarket)\b`, so a compound word passes unchanged. Examples are
+  "KalshiEX" (Kalshi's legal entity, KalshiEX LLC, which resolution text can name) and
+  "PolymarketUS". `Blinded.named` checks by substring, so it would catch such a word, but no fixture
+  holds one. Suggestion: drop the trailing `\b` (`(?i)\b(?:kalshi|polymarket)\w*`), and add
+  "KalshiEX LLC" to the `ArmsSuite` case.
+  Resolved: a venue's name and any word it begins, with an `ArmsSuite` case of "KalshiEX LLC and PolymarketUS", cfc3da9.
+
+### Nits
+
+- `src/main/scala/forecastbench/domain/Pack.scala:77`,
+  `src/main/scala/forecastbench/application/QuestionForecast.scala:404`,
+  `src/main/scala/forecastbench/api/CohortEndpoint.scala:367`: nitpick (non-blocking): the gatherer
+  version is written three ways: a literal `2` default in `merge`, `getOrElse(1)`, and a doc comment
+  that still says "the only gatherer". Suggestion: default to `Gatherer.Version` (or take no
+  default), name the version-1 fallback, and update the comment.
+  Resolved: `Pack.CurrentVersion`, which `Gatherer.Version` names; the comment says what it is; `getOrElse(1)` stays, since a cohort with no version recorded gathered by version 1, cfc3da9.
+
+- `src/main/scala/forecastbench/application/Bounded.scala:24-26`: nitpick (non-blocking): when a
+  task fails, `get()` rethrows the error wrapped in `ExecutionException`. `shutdown()` then leaves
+  the other tasks running after the route has answered. `CohortEndpoint` also borrows
+  `OutcomeReader.Parallel` through fully qualified names. Suggestion: unwrap with
+  `catch case e: ExecutionException => throw e.getCause`, call `shutdownNow()` on failure, and move
+  `Parallel` to `Bounded`.
+  Resolved: the first failure is thrown unwrapped and the work not yet done is stopped; `Bounded.Parallel` is the routes' bound, 611cc63.
+
+- Commit `5970ffa`: nitpick (non-blocking): its body is one 257-character line. The first round's
+  resolution says the review's commits wrap their bodies; the seven fix commits do, and this one
+  does not.
+  Left: nit; not rewritten.
+
+### Questions
+
+- `src/main/scala/forecastbench/domain/Pack.scala:83`: thought: the blinding in `Arm.block` is
+  unversioned and covers questions already held, but the pack filter is versioned. Packs of cohorts
+  frozen under version 1 (the rehearsal's) therefore still hold a document that quotes Kalshi's
+  odds, which `just retry` would give to the arms again. If no version-1 cohort will be forecast
+  again, nothing needs to change. If one will, the limitations entry should say so.
+  Answered: no. The rehearsal cohorts are development cohorts, whose reports are marked and left out of any report over several; a retry makes runs again on the pack the cohort already holds, which rule 1 keeps. limitations.md says a version-1 cohort keeps its packs.
+
+- `src/main/scala/forecastbench/gather/Exa.scala:61`: question: the time spent waiting for Exa's
+  bench-wide `inFlight` permit (4 permits, six questions in flight) is not in `GatherTimeout`'s
+  arithmetic, and the margin is 30 s. Was it left out because a permit is held for at most one
+  30-second attempt? If so, a sentence in the `GatherTimeout` doc comment would settle it.
+  Answered: it was left out by mistake. Six questions gathering at once can wait about one search for a slot, so the gathering's timeout is 20 minutes and its comment counts the wait, 1b8c4a4.
+
+### Praise
+
+- `src/test/scala/forecastbench/venues/Blinded.scala:20`: praise: the guard first asserts that the
+  recorded replies do name a venue, so it cannot pass vacuously. That is exactly what the first
+  round's guard lacked.
+- `src/main/scala/forecastbench/domain/Pack.scala:83` and `application/QuestionForecast.scala:404`:
+  praise: the new filter is versioned and read from the frozen cohort, so it does not change the
+  gathering of a cohort already frozen (the first rule).
+- `specs/001-forecast-evaluation/research.md`: praise: the cost figures were recomputed from the
+  runs and reconcile with what was spent, and the old figures are kept with the reason they were
+  wrong.
+
+### Checks applied
+
+- General checklist, applied: Correctness, Design and scope, Error handling, Concurrency and state
+  (the workflow's failover against ankka's step execution), Security (the second rule; no secrets;
+  no new entry points), Data and migrations (no new events; `Settled` is not idempotent),
+  Performance (`Bounded`), Tests, Observability (a skim), API and compatibility (gatherer version 2
+  against frozen cohorts; the new 422), Documentation, and Commit and PR hygiene. Skipped:
+  Dependencies and build (no dependency or build change).
+- Every-language documentation rule: not applicable, as in the first round. This is one Scala
+  service, documented in Scala and HTTP only, with no SDK, per-language template or docs site, and
+  no REVIEW.md, contributing page or docs check that states the rule. (The gather script listed
+  `specs/001-forecast-evaluation/review.md` as a REVIEW.md because the filesystem is
+  case-insensitive; that file is this report, not a checklist.)
+- Language skills: `pr-review-scala` (bundled; the repository has none of its own), applied in its
+  order.
+- Project rules read: CLAUDE.md (the three rules and the traps), the workspace CLAUDE.md,
+  contracts/arm.md, the first round's report.
+- Enforced by tooling and not reviewed: formatting (scalafmt) and the Conventional Commit headers
+  (every header parses).
+- Tests run: `sbt "testOnly forecastbench.domain.* forecastbench.report.* forecastbench.venues.*
+  forecastbench.gather.* forecastbench.application.BoundedSuite forecastbench.steps.FailoverFeatures
+  forecastbench.steps.ArmsFeatures forecastbench.steps.PackFeatures"`: 181 passed, 0 failed. Not
+  run: the remaining feature suites (about ten minutes), and `just live` (excluded by instruction).
+  I did not check that `FailoverFeatures` fails without the failover, because that needs the code
+  changed.

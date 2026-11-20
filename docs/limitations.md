@@ -56,8 +56,10 @@ What the bench does not do, and what it has not proven. Nothing here is promised
   (`src/test/resources/kalshi/`, `src/test/resources/polymarket/`). A change to either shape breaks
   the import until the venue's code follows. Polymarket has not been read against the live venue.
 - A venue's resolution rules often name it and link to its pages. Every text a model is given has
-  the venues' names read as "the venue" and their addresses left out; a news page in a pack that
-  quotes a venue's odds is not filtered (only the venues' own pages are).
+  the venues' names read as "the venue" and their addresses left out. From gatherer version 2, a
+  document whose title, address, source or excerpt names a venue is left out of the pack, so a news
+  page quoting a venue's probability is too; one that quotes it without naming the venue is not.
+  A cohort frozen under version 1, as the rehearsal's were, keeps the packs it gathered.
 - A void market's representation at each venue was inferred from the documentation and from markets
   of 2020, not observed on a recent market.
 - Polymarket's category is its first tag, which is sometimes a promotional label; such a category is
