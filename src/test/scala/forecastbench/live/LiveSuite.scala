@@ -110,9 +110,12 @@ class LiveSuite extends munit.FunSuite:
       """{"standing":"development","categories":["Economics"],"limit":3,"onePerEvent":true}"""
     )
     assert(imported("held").num.toInt + imported("already").num.toInt >= 3, imported.toString)
-    val questions = bench("GET", "/questions?venue=kalshi").arr.toList
-      .filter(_("standing").str == "development")
-      .take(3)
+    // The questions view, once it holds three development questions.
+    val questions = eventually("the questions view to hold them", 2.minutes) {
+      Some(
+        bench("GET", "/questions?venue=kalshi&standing=development").arr.toList.take(3)
+      ).filter(_.size == 3)
+    }
     assertEquals(questions.size, 3)
     val ids = questions.map(_("id").str)
     // A week before the first of them closed, so every one was still open then.

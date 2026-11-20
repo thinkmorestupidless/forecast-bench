@@ -507,10 +507,86 @@ the pull request is the independent one.
   reasoning stack: it installs the real edges in Bench, which is one per JVM, so it must never run
   beside the feature suites' scripted bench in one `sbt test`. `just live` sets the gate and runs it
   alone.
+- 2026-11-20 (T079, Kalshi): listing `/markets` and reading each market's event for its category
+  made one request an event, and an import of settled markets outlasted the route's 20 seconds. The
+  venue now lists `/events?status=open|settled&with_nested_markets=true`, 200 events a page, the
+  category read from each event.
+- 2026-11-20 (T079): an import's `limit` was applied by the venue to markets, before an event's
+  markets were made one, so three markets of one event held one question. The endpoint now asks
+  the venue for at least 500 and takes the limit after `onePerEvent`.
+- 2026-11-20 (T079, decided by the person, contracts/arm.md changed): about one model reply in six
+  wrote its reasoning before the JSON object it was asked for alone. A reply is now read as itself
+  or, failing that, as its last JSON object, which must still be of the form; the reply is kept
+  whole. The same holds for the appraisal's reader and open points and the gatherer's queries.
+- 2026-11-20 (T079, decided by the person, contracts/reasoning.md changed): the graph arm was given
+  10 of its appraisal's 13 claims. The graph topic has three partitions, and the sink had applied
+  the last claim before three earlier ones, so a wait for the last claim alone was not enough. The
+  bench waits for each claim and fails the read, as not caught up, unless the cases hold exactly
+  the appraisal's claims. The equality check stays, for a claim revised between the two reads.
+- 2026-11-20 (T079, Exa): twenty questions gathered at once drew `429` from Exa for seven packs.
+  At most four searches are in flight from one bench, and a `429` or `5xx` is asked again after a
+  pause of 1, 2, 4 and 8 seconds, or Exa's `Retry-After`, before the search fails.
+- 2026-11-20 (T079, decided by the person): five of twenty appraisals failed whole on one claim each
+  whose quote was not found, every one quoting speech from a document set with curly quotes. A
+  quote is now matched with its typography plain on both sides (curly and angled quotes, primes,
+  dashes, the ellipsis, non-breaking and thin spaces) as well as its white space; it is otherwise
+  verbatim, and one claim that does not hold still fails the appraisal (FR-022). A failed appraisal
+  keeps the reply it failed on in the bucket `given`, named on the failure as `answered`.
+- 2026-11-20 (T079, decided by the person, contracts/reasoning.md changed): twenty appraisals written
+  at once put about 260 claims through the sink, and three runs found the graph had not caught up
+  within ten seconds; both graphs were complete minutes later. A read now has 30 seconds for all its
+  waits, and a read not caught up is made again ten seconds later, three reads in all
+  (`bench.graph-read`), inside the step's five minutes.
+- 2026-11-20 (T079, the "Verify at implementation" list, settled against the real edges):
+  - ankka 0.18.0 on Maven Central: yes (T001).
+  - `ModelProvider` and the session id: no session id; the fallback is taken (T023, T024).
+  - An event of about 30 KB: packs of up to 31 KB as served were held and read back without
+    configuration in all three rehearsals.
+  - A view query paging past a thousand rows: not observed. No view held a thousand rows in the
+    rehearsals; the routes ask for explicit limits (100,000 questions, 500 a cohort's runs).
+    Still open, for the first prospective cohort.
+  - `thenReplyAs` failing to decode: moot. The forecaster is not an agent (T023), and a reply that
+    does not decode is a value the step records.
+  - The reasoning service 0.1.1: it accepts question ids of the planned form
+    (`rehearsal-3.38bc882b0f92`), and answers `/answers/case` for a hypothesis with no claims with
+    `{"claims":[],"revisedClaims":[]}`.
+  - Void markets: still inferred, not observed. None of the questions imported resolved void.
+  - Exa as R12: real searches on 2026-11-20 answered in the documented shape, read by the
+    recorded-shape decoder. Its rate limit was not in R12 (see above).
+  - The graph sink under emulation on Apple silicon: both the sink and the reasoning service are
+    amd64 images. About 260 claims from twenty appraisals were applied within tens of seconds,
+    slowly enough to need the retried read. Two hundred questions are not measured.
 
 ## Measurements
 
-*(empty)*
+2026-11-20 (T079), three development cohorts of the same twenty Kalshi questions (Economics,
+resolved before 2026-11-20, pretended time 2026-07-25), all five arms, one repetition, on
+`claude-opus-5-5`. `rehearsal` and `rehearsal-2` found the faults recorded above.
+`rehearsal-3`, run after the fixes, is the one measured.
+
+| Arm | Forecasts | Cost a forecast (USD) | Tokens a forecast | Model call, mean |
+|---|---|---|---|---|
+| venue-price | 0 of 20: the venue gave no probability at the pretended time | 0 | 0 | none |
+| model-alone | 20 of 20 | 0.0115 | 1,030 | 5.2 s |
+| evidence | 20 of 20 | 0.0400 | 8,412 | 4.4 s |
+| graph | 19 of 20: one appraisal failed on a true misquote | 0.4889 | 29,538 | 4.7 s |
+| prose | 19 of 20: the same appraisal | 0.4907 | 29,802 | 5.0 s |
+
+- The graph and prose costs each count the whole appraisal (FR-027), so the cohort spent
+  $12.73 in all, less than the sum of its runs' costs, about $20.6. That is about $0.64 a
+  question for all five arms; the appraisal is most of it.
+- Forecasting twenty questions took 1 min 41 s from the forecast route to the last run recorded,
+  packs gathered and appraisals made within it (`rehearsal-2`: 2 min 3 s).
+- Brier scores over the twenty (17 resolved no, 3 yes): model-alone 0.0785, evidence 0.0735,
+  graph 0.0731, prose 0.0740.
+- The paired graph minus prose differences, nineteen pairs: mean -0.0009, standard deviation
+  0.014, fourteen of them exactly nought, extremes -0.032 and +0.047.
+- **What it implies for the first prospective cohort: little yet.** At that spread a difference of
+  0.02 would need 4 questions and 0.01 would need 16, against R11's assumed 0.10 (about 200 and
+  800). But the twenty are not like a prospective cohort. Twelve are one family of IPO-by-a-date
+  questions that both arms put near nought, and on near-certain questions the two shapes cannot
+  differ. The spread to plan on stays R11's 0.10 until a prospective cohort of uncertain questions
+  gives its own; SC-009's 200 stands.
 
 ## Design finished
 
