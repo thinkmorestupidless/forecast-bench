@@ -16,3 +16,9 @@ class BoundedSuite extends munit.FunSuite:
     assertEquals(out, (1 to 200).map(_ * 2).toList)
     assert(most.get <= 8, s"${most.get} at once")
     assert(most.get > 1, "nothing ran at once")
+
+  test("a failure is thrown as it was thrown"):
+    val thrown = intercept[IllegalStateException](
+      Bounded.map(1 to 50, 4)(i => if i == 7 then throw IllegalStateException("seven") else i)
+    )
+    assertEquals(thrown.getMessage, "seven")

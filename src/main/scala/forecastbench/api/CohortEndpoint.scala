@@ -270,7 +270,7 @@ final class CohortEndpoint(client: ComponentClient, views: ViewClient)
    */
   private def recorded(c: Cohort): List[RunRecorded] =
     forecastbench.application.Bounded
-      .map(c.runs, forecastbench.application.OutcomeReader.Parallel) { (q, a, r) =>
+      .map(c.runs) { (q, a, r) =>
         Iterator
           .from(1)
           .map(n =>

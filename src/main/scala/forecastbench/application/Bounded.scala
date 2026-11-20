@@ -1,6 +1,6 @@
 package forecastbench.application
 
-import java.util.concurrent.{Callable, Executors, Semaphore}
+import java.util.concurrent.{Callable, ExecutionException, Executors, Semaphore}
 
 /**
  * Work over many items, each on a virtual thread, at most `parallel` at once, the results in the
@@ -9,7 +9,11 @@ import java.util.concurrent.{Callable, Executors, Semaphore}
  */
 object Bounded:
 
-  def map[A, B](items: Seq[A], parallel: Int)(f: A => B): List[B] =
+  /** How many a route reads at once. */
+  val Parallel = 32
+
+  /** The first failure is thrown as it was thrown, and the work not yet done is stopped. */
+  def map[A, B](items: Seq[A], parallel: Int = Parallel)(f: A => B): List[B] =
     val pool    = Executors.newVirtualThreadPerTaskExecutor()
     val permits = Semaphore(parallel)
     try
@@ -21,6 +25,12 @@ object Bounded:
             finally permits.release()
           ): Callable[B])
         )
-        .map(_.get())
+        .map(t =>
+          try t.get()
+          catch
+            case e: ExecutionException =>
+              pool.shutdownNow(): Unit
+              throw Option(e.getCause).getOrElse(e)
+        )
         .toList
     finally pool.shutdown()

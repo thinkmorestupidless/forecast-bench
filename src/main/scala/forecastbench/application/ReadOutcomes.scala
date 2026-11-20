@@ -53,7 +53,7 @@ final case class OutcomesRead(read: Int, changed: Int, unreadable: List[String])
 object OutcomeReader:
 
   /** How many questions are read at once. */
-  val Parallel = 32
+  val Parallel = Bounded.Parallel
 
   def readAll(client: ComponentClient, now: Instant): OutcomesRead =
     val watched = client
