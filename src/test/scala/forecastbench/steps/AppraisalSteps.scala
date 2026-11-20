@@ -67,10 +67,10 @@ trait AppraisalSteps extends ModelSteps:
       Right(ModelResponse(ScriptedModel.claims(stated), usage = ScriptedModel.Usage))
     }
 
-  Given("the graph loses a claim once the arm {string} has been given it") { (words: String) =>
+  Given("the graph revises a claim once the arm {string} has been given it") { (words: String) =>
     fixture.model.when(key) { r =>
       if r.systemMessage == forecastbench.application.Instructions.latest(arm(words)).map(_.text)
-      then fixture.reasoning.forget("claim", Reasoning.claimId(rq, 1))
+      then fixture.reasoning.revise("claim", Reasoning.claimId(rq, 1))(_("statement") = "Revised.")
       Right(ModelResponse(ScriptedModel.forecast(0.5), usage = ScriptedModel.Usage))
     }
   }
@@ -85,6 +85,30 @@ trait AppraisalSteps extends ModelSteps:
       Vector.empty,
       "the model was called for a run that failed the check"
     )
+  }
+
+  Given("the graph applies the first claim of {string} after the last") { (_: String) =>
+    fixture.reasoning.late(Reasoning.claimId(rq, 1))
+  }
+
+  Given("the graph never applies the first claim of {string}") { (_: String) =>
+    fixture.reasoning.neverApplied(Reasoning.claimId(rq, 1))
+  }
+
+  Then("the arm {string} is given every claim of the appraisal") { (words: String) =>
+    val asked = requestsOf(arm(words)).headOption.getOrElse(fail("the arm was not asked"))
+    made.claims.map(c => Reasoning.short(c.id)).foreach { c =>
+      assert(userText(asked).contains(s"[$c]"), s"$c was not given")
+    }
+  }
+
+  Then("the runs of the arms {string} and {string} are failed, the graph not caught up") {
+    (a: String, b: String) =>
+      List(a, b).foreach { words =>
+        val run = recorded(november).find(_.arm == arm(words)).getOrElse(fail("no run"))
+        assertEquals(run.ending, Ending.Failed(Reasoning.NotCaughtUp))
+        assertEquals(requestsOf(arm(words)), Vector.empty, "the model was called")
+      }
   }
 
   protected val zeroUsage: TokenUsage = TokenUsage(0, 0)

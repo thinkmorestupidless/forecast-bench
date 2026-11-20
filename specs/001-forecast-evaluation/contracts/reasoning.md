@@ -11,7 +11,7 @@ with the record as held.
 | each document with a claim | `POST /sources` | `{"id": "src.<12 hex>", "name": <source, first 200 chars>}` |
 | | `POST /evidence` | `{"source", "locator": <address>, "excerpt": <the document's excerpt>, "publishedAt"?: <when it is not later than now>}` → its `id` |
 | each claim | `POST /claims` | `{"id": "<cohort>.<qkey>.c<n>", "holder": "<cohort>.appraisal", "statement", "derivesFrom": [evidenceId], "stances": [{"hypothesis": "<cohort>.<qkey>/yes", "stance"}]}` |
-| before the graph arm reads | `POST /graph/wait` | `{"kind": "claim", "id": <the last claim>, "limitMs": 10000}`; not caught up is a failed appraisal read |
+| before the graph arm or the prose arm reads | `POST /graph/wait`, for each of the appraisal's claims | `{"kind": "claim", "id": <the claim>, "limitMs": 10000}`; the graph topic has several partitions, so a later claim can be applied before an earlier one. Any wait not caught up, or cases read that do not hold exactly the appraisal's claims, is a failed appraisal read, `the graph had not caught up with the appraisal` |
 | the graph and prose arms | `GET /answers/case?hypothesis=<q>/yes&stance=supports` and `&stance=contradicts` | read `claims[].claim` and `claims[].evidence[0]` with its source |
 | after a graph run with a forecast is recorded | `POST /beliefs/revisions` | `{"id": "<cohort>.<qkey>.b<rep>", "holder": "<cohort>.graph.r<rep>", "hypothesis": "<q>/yes", "probability", "restsOn": [{"claim"}]}` |
 

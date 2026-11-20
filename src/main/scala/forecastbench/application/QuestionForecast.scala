@@ -4,6 +4,7 @@ import com.thinkmorestupidless.ankka.core.*
 import com.thinkmorestupidless.ankka.core.Serializers.given
 import com.thinkmorestupidless.ankka.sdk.*
 import forecastbench.domain.*
+import forecastbench.reasoning.Reasoning
 import forecastbench.venues.VenueQuestion
 
 import scala.concurrent.duration.*
@@ -181,9 +182,16 @@ final class QuestionForecast(context: WorkflowContext) extends Workflow[Question
   /** The appraisal's content as the graph holds it, once the graph has caught up with it. */
   private def readContent(m: AppraisalMade, pack: Pack): Either[String, AppraisalContent] =
     val r = reasoning
+    // Each claim is waited for: the graph topic has several partitions, so the last claim written
+    // can be applied before the ones before it (contracts/reasoning.md). The cases read must then
+    // hold the appraisal's claims exactly, or the graph has not caught up.
+    val expected = m.claims.map(c => Reasoning.short(c.id)).toSet
     for
-      _       <- m.claims.lastOption.fold(Right(()))(c => r.await(c.id))
+      _ <- m.claims.foldLeft[Either[String, Unit]](Right(()))((done, c) =>
+        done.flatMap(_ => r.await(c.id))
+      )
       content <- r.content(m.reasoningQuestion, pack, m.openPoints)
+      _       <- Either.cond(content.claims.map(_.id).toSet == expected, (), Reasoning.NotCaughtUp)
     yield content
 
   /** A run that failed before its model was called: the reasoning service could not be read. */

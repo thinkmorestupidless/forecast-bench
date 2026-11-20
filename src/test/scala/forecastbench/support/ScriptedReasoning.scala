@@ -41,6 +41,22 @@ final class ScriptedReasoning:
     held.remove(kind -> id)
     when.remove(kind -> id): Unit
 
+  /**
+   * A claim the graph applies late: held, but in no case read until a `/graph/wait` names it, as
+   * when the sink applies a later claim from another partition first.
+   */
+  def late(claimId: String): Unit = lagging.add(claimId): Unit
+
+  /** A claim the graph never applies: in no case read, and every wait for it is not caught up. */
+  def neverApplied(claimId: String): Unit = stuck.add(claimId): Unit
+
+  /** The graph revises a held record: what is read of it changes, as when it is written anew. */
+  def revise(kind: String, id: String)(change: ujson.Value => Unit): Unit =
+    Option(held.get(kind -> id)).foreach(change)
+
+  private val lagging = java.util.concurrent.ConcurrentHashMap.newKeySet[String]()
+  private val stuck   = java.util.concurrent.ConcurrentHashMap.newKeySet[String]()
+
   /** The next writes to the route (`/claims`) are refused with the rule, until `admit`. */
   def refuse(route: String, rule: String): Unit = refusal.put(route, rule): Unit
   def admit(route: String): Unit                = refusal.remove(route): Unit
@@ -156,17 +172,26 @@ final class ScriptedReasoning:
             case ("POST", "/beliefs/revisions") =>
               val b = ujson.read(text); write("revision", b("id").str, b)
             case ("POST", "/graph/wait") =>
-              val b = ujson.read(text)
-              if get(b("kind").str, b("id").str).isEmpty then refused(404, "graph.wait.not-held")
+              val b  = ujson.read(text)
+              val id = b("id").str
+              if get(b("kind").str, id).isEmpty then refused(404, "graph.wait.not-held")
+              else if stuck.contains(id) then
+                json(
+                  200,
+                  ujson.Obj("caughtUp" -> false, "waitedMs" -> 10000, "missing" -> ujson.Arr(id))
+                )
               else
+                lagging.remove(id)
                 json(200, ujson.Obj("caughtUp" -> true, "waitedMs" -> 0, "missing" -> ujson.Arr()))
             case ("GET", "/answers/case") =>
               val q = query(path)
-              val claims = all("claim").filter(
-                _("stances").arr.exists(s =>
-                  s("hypothesis").str == q("hypothesis") && s("stance").str == q("stance")
+              val claims = all("claim")
+                .filterNot(c => lagging.contains(c("id").str) || stuck.contains(c("id").str))
+                .filter(
+                  _("stances").arr.exists(s =>
+                    s("hypothesis").str == q("hypothesis") && s("stance").str == q("stance")
+                  )
                 )
-              )
               json(
                 200,
                 ujson.Obj(
