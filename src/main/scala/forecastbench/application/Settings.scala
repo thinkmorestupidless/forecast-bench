@@ -28,13 +28,20 @@ final case class ModelEntry(
 
 final case class Limits(documents: Int, excerpt: Int, searches: Int, results: Int)
 
+/**
+ * How the graph is read for an appraisal (contracts/reasoning.md): each claim waited for up to
+ * `waitLimit`, and a read not caught up made again `attempts` times in all, `pause` apart.
+ */
+final case class GraphRead(waitLimit: FiniteDuration, attempts: Int, pause: FiniteDuration)
+
 /** The bench's settings, read once at start from `bench` in the configuration. */
 final case class Settings(
     models: Map[String, ModelEntry],
     concurrency: Int,
     limits: Limits,
     venues: Map[String, String],
-    outcomesEvery: FiniteDuration
+    outcomesEvery: FiniteDuration,
+    graphRead: GraphRead
 )
 
 object Settings:
@@ -57,7 +64,12 @@ object Settings:
         results = limits.getInt("results")
       ),
       venues = venues.root.keySet.asScala.toList.map(k => k -> venues.getString(k)).toMap,
-      outcomesEvery = bench.getDuration("outcomes-every").toScala
+      outcomesEvery = bench.getDuration("outcomes-every").toScala,
+      graphRead = GraphRead(
+        waitLimit = bench.getDuration("graph-read.wait-limit").toScala,
+        attempts = bench.getInt("graph-read.attempts"),
+        pause = bench.getDuration("graph-read.pause").toScala
+      )
     )
 
   private def model(c: Config): ModelEntry =

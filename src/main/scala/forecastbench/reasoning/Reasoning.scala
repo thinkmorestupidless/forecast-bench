@@ -85,8 +85,8 @@ final class Reasoning(client: ServiceClient):
     ).map(_ => ())
 
   /** Waits for the graph to hold the claim; not caught up is a failed read. */
-  def await(claim: String): Either[String, Unit] =
-    post("/graph/wait", WaitBody("claim", claim, 10000))
+  def await(claim: String, limitMs: Int = 30000): Either[String, Unit] =
+    post("/graph/wait", WaitBody("claim", claim, limitMs))
       .flatMap(decode[Waited])
       .flatMap(w => if w.caughtUp then Right(()) else Left(NotCaughtUp))
 

@@ -11,6 +11,13 @@ Feature: The content the graph and prose arms are given, read from the graph
     When the arms "graph" and "prose" forecast "rates"
     Then the arm "graph" is given every claim of the appraisal
 
+  Scenario: a read the graph has not caught up with is made again
+    Given a frozen cohort "november" with a prospective question "rates"
+    And the question "rates" has an evidence pack of "4" documents
+    And the graph applies the first claim of "rates" only on the third read
+    When the arms "graph" and "prose" forecast "rates"
+    Then the arm "graph" is given every claim of the appraisal
+
   Scenario: a claim the graph never applies fails both runs before the model is called
     Given a frozen cohort "november" with a prospective question "rates"
     And the question "rates" has an evidence pack of "4" documents

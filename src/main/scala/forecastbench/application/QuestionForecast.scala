@@ -179,20 +179,34 @@ final class QuestionForecast(context: WorkflowContext) extends Workflow[Question
 
   private def reasoning = forecastbench.reasoning.Reasoning(context.services("reasoning"))
 
-  /** The appraisal's content as the graph holds it, once the graph has caught up with it. */
+  /**
+   * The appraisal's content as the graph holds it, once the graph has caught up with it. Each claim
+   * is waited for: the graph topic has several partitions, so the last claim written can be applied
+   * before the ones before it. The cases read must hold the appraisal's claims exactly. A read the
+   * graph has not caught up with, inside the read's one wait limit, is made again after a pause, up
+   * to the attempts the settings name (contracts/reasoning.md).
+   */
   private def readContent(m: AppraisalMade, pack: Pack): Either[String, AppraisalContent] =
-    val r = reasoning
-    // Each claim is waited for: the graph topic has several partitions, so the last claim written
-    // can be applied before the ones before it (contracts/reasoning.md). The cases read must then
-    // hold the appraisal's claims exactly, or the graph has not caught up.
+    val r        = reasoning
+    val how      = Bench.edges.settings.graphRead
     val expected = m.claims.map(c => Reasoning.short(c.id)).toSet
-    for
-      _ <- m.claims.foldLeft[Either[String, Unit]](Right(()))((done, c) =>
-        done.flatMap(_ => r.await(c.id))
-      )
-      content <- r.content(m.reasoningQuestion, pack, m.openPoints)
-      _       <- Either.cond(content.claims.map(_.id).toSet == expected, (), Reasoning.NotCaughtUp)
-    yield content
+    def once(): Either[String, AppraisalContent] =
+      val deadline = System.nanoTime() + how.waitLimit.toNanos
+      def left     = ((deadline - System.nanoTime()) / 1000000L).toInt
+      for
+        _ <- m.claims.foldLeft[Either[String, Unit]](Right(()))((done, c) =>
+          done.flatMap(_ => if left <= 0 then Left(Reasoning.NotCaughtUp) else r.await(c.id, left))
+        )
+        content <- r.content(m.reasoningQuestion, pack, m.openPoints)
+        _ <- Either.cond(content.claims.map(_.id).toSet == expected, (), Reasoning.NotCaughtUp)
+      yield content
+    def attempt(n: Int): Either[String, AppraisalContent] =
+      once() match
+        case Left(Reasoning.NotCaughtUp) if n < how.attempts =>
+          Thread.sleep(how.pause.toMillis)
+          attempt(n + 1)
+        case other => other
+    attempt(1)
 
   /** A run that failed before its model was called: the reasoning service could not be read. */
   private def failedRun(run: RunPlan, why: String, pack: Option[Pack]): StepEffect =

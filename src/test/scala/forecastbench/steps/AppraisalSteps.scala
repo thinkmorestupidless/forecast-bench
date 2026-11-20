@@ -91,6 +91,10 @@ trait AppraisalSteps extends ModelSteps:
     fixture.reasoning.late(Reasoning.claimId(rq, 1))
   }
 
+  Given("the graph applies the first claim of {string} only on the third read") { (_: String) =>
+    fixture.reasoning.appliedAfter(Reasoning.claimId(rq, 1), 2)
+  }
+
   Given("the graph never applies the first claim of {string}") { (_: String) =>
     fixture.reasoning.neverApplied(Reasoning.claimId(rq, 1))
   }

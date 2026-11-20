@@ -31,8 +31,11 @@ object ServiceFixture:
   lazy val settings: Settings =
     val loaded = Settings.load()
     val entry  = loaded.models.values.head
-    loaded.copy(models =
-      loaded.models ++ Seq("model-a", "model-b").map(n => n -> entry.copy(name = n, model = n))
+    loaded.copy(
+      models =
+        loaded.models ++ Seq("model-a", "model-b").map(n => n -> entry.copy(name = n, model = n)),
+      // The scripted graph answers at once; a read not caught up is tried again without a pause.
+      graphRead = loaded.graphRead.copy(pause = scala.concurrent.duration.Duration.Zero)
     )
 
   val model: ScriptedModel = ScriptedModel()

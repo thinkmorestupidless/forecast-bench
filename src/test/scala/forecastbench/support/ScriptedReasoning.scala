@@ -50,6 +50,13 @@ final class ScriptedReasoning:
   /** A claim the graph never applies: in no case read, and every wait for it is not caught up. */
   def neverApplied(claimId: String): Unit = stuck.add(claimId): Unit
 
+  /** A claim the graph applies only once it has been waited for more than `waits` times. */
+  def appliedAfter(claimId: String, waits: Int): Unit =
+    stuck.add(claimId)
+    slow.put(claimId, waits): Unit
+
+  private val slow = ConcurrentHashMap[String, Int]()
+
   /** The graph revises a held record: what is read of it changes, as when it is written anew. */
   def revise(kind: String, id: String)(change: ujson.Value => Unit): Unit =
     Option(held.get(kind -> id)).foreach(change)
@@ -175,6 +182,10 @@ final class ScriptedReasoning:
               val b  = ujson.read(text)
               val id = b("id").str
               if get(b("kind").str, id).isEmpty then refused(404, "graph.wait.not-held")
+              else if Option(slow.computeIfPresent(id, (_, n) => n - 1)).contains(0) then
+                slow.remove(id)
+                stuck.remove(id)
+                json(200, ujson.Obj("caughtUp" -> true, "waitedMs" -> 0, "missing" -> ujson.Arr()))
               else if stuck.contains(id) then
                 json(
                   200,
