@@ -165,7 +165,7 @@ final class QuestionForecast(context: WorkflowContext) extends Workflow[Question
         val note = cohort.call(CohortEntity.get).invoke().cohort.flatMap(_.packs.get(plan.question))
         note match
           case None => waitFor(run, NoPackInTime)
-          case Some(n) if n.state == PackNote.Failed("").state =>
+          case Some(n) if n.failed =>
             notMade(run, s"the pack was not gathered: ${n.reason.getOrElse("no reason was given")}")
           case Some(_) =>
             val pack = heldPack

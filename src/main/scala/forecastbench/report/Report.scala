@@ -201,8 +201,8 @@ object Report:
         figure(_.log.get, "log"),
         RunCounts(
           forecasts,
-          armRuns.count(_.ending.isInstanceOf[Ending.Abstained]),
-          armRuns.count(_.ending.isInstanceOf[Ending.Failed])
+          armRuns.count(_.ending.isAbstained),
+          armRuns.count(_.ending.isFailed)
         ),
         Option.when(usesModel && forecasts > 0)(
           (armRuns.map(_.cost).sum / forecasts)

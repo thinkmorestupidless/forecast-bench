@@ -340,7 +340,7 @@ object CohortEndpoint:
       .groupBy(r => (r.question, r.arm, r.repetition))
       .toList
       .collect {
-        case ((q, a, rep), rs) if rs.forall(_.ending.isInstanceOf[Ending.Failed]) =>
+        case ((q, a, rep), rs) if rs.forall(_.ending.isFailed) =>
           (q, a, rep, rs.map(_.attempt).max + 1)
       }
       .sorted

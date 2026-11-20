@@ -23,12 +23,14 @@ final case class InstructionRef(version: Int, digest: String)
 final case class NotMade(question: String, arm: String, repetition: Int, reason: String)
 
 /** What the gatherer made of a question's pack: `gathered`, `empty`, or `failed` with a reason. */
-final case class PackNote(state: String, reason: Option[String])
+final case class PackNote(state: String, reason: Option[String]):
+  def failed: Boolean = state == PackNote.FailedState
 
 object PackNote:
   val Gathered: PackNote            = PackNote("gathered", None)
   val Empty: PackNote               = PackNote("empty", None)
-  def Failed(why: String): PackNote = PackNote("failed", Some(why))
+  val FailedState                   = "failed"
+  def Failed(why: String): PackNote = PackNote(FailedState, Some(why))
 
 final case class Cohort(
     id: String,

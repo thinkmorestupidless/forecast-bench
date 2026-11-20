@@ -25,6 +25,14 @@ enum Ending:
     case Forecast(p) => Some(p)
     case _           => None
 
+  def isAbstained: Boolean = this match
+    case _: Abstained => true
+    case _            => false
+
+  def isFailed: Boolean = this match
+    case _: Failed => true
+    case _         => false
+
   def word: String = this match
     case _: Forecast  => "forecast"
     case _: Abstained => "abstained"

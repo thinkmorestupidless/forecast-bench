@@ -23,9 +23,8 @@ final class RunEntity extends EventSourcedEntity[RunState, RunEvent]:
 
   def record(r: Record): Effect[RunState] =
     Run.recording(currentState, r.run, r.question) match
-      case Left(why) if why == Run.Held => effects.error(why, ErrorCode.Conflict)
-      case Left(why)                    => effects.error(why, ErrorCode.Conflict)
-      case Right(events)                => effects.persistAll(events).thenReplyState
+      case Left(why)     => effects.error(why, ErrorCode.Conflict)
+      case Right(events) => effects.persistAll(events).thenReplyState
 
   def score(s: ScoreRun): Effect[RunState] =
     Run.scoring(currentState, s.method, s.outcome, Some((s.brier, s.log)), s.now) match
