@@ -48,6 +48,12 @@ class ExaSuite extends munit.FunSuite:
 
   /** A loopback Exa answering each search with the next status, then the recorded reply. */
   private def answering(statuses: Int*)(check: (Exa, () => List[Long]) => Unit): Unit =
+    answeringAfter("3", statuses*)(check)
+
+  /** As `answering`, the last refusal asking Exa's pause of `retryAfter` seconds. */
+  private def answeringAfter(retryAfter: String, statuses: Int*)(
+      check: (Exa, () => List[Long]) => Unit
+  ): Unit =
     val left = java.util.concurrent.ConcurrentLinkedQueue[Int](statuses.toList.asJava)
     val server =
       com.sun.net.httpserver.HttpServer.create(java.net.InetSocketAddress("127.0.0.1", 0), 0)
@@ -56,7 +62,7 @@ class ExaSuite extends munit.FunSuite:
       ex =>
         val status = Option(left.poll()).getOrElse(200)
         val body   = (if status == 200 then reply("search.json") else "{}").getBytes("UTF-8")
-        if status == 429 && left.isEmpty then ex.getResponseHeaders.add("Retry-After", "3")
+        if status == 429 && left.isEmpty then ex.getResponseHeaders.add("Retry-After", retryAfter)
         ex.sendResponseHeaders(status, body.length.toLong)
         ex.getResponseBody.write(body)
         ex.close()
@@ -77,6 +83,12 @@ class ExaSuite extends munit.FunSuite:
     answering(429, 503, 429) { (exa, paused) =>
       assertEquals(exa.search("q", None, 10).map(_.size), Right(2))
       assertEquals(paused(), List(1000L, 2000L, 3000L))
+    }
+
+  test("a Retry-After longer than the longest pause waits the longest pause"):
+    answeringAfter("3600", 429) { (exa, paused) =>
+      assertEquals(exa.search("q", None, 10).map(_.size), Right(2))
+      assertEquals(paused(), List(Exa.MaxPauseMs))
     }
 
   test("a search Exa keeps refusing fails after its attempts, saying how Exa answered"):

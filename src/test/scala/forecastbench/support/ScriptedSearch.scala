@@ -28,6 +28,18 @@ final class ScriptedSearch extends Search:
   def findsNothing(word: String): Unit = finds(word, Nil)
   def fails(word: String): Unit = found.put(word, _ => Left("the scripted search is down")): Unit
 
+  /**
+   * The next search for the word throws, once, as a search with a fault in it would: the step
+   * fails. Once, since scenario numbers repeat across suites and the search is shared.
+   */
+  def throws(word: String): Unit =
+    found.put(
+      word,
+      _ =>
+        found.remove(word)
+        throw IllegalStateException("the scripted search threw")
+    ): Unit
+
   /** Holds every search for the word until `release`: a pack not yet gathered. */
   def hold(word: String): Unit    = holds.put(word, CountDownLatch(1)): Unit
   def release(word: String): Unit = Option(holds.remove(word)).foreach(_.countDown())

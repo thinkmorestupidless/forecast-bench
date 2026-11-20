@@ -56,10 +56,22 @@ final class QuestionForecast(context: WorkflowContext) extends Workflow[Question
   def emptyState: QuestionForecastState =
     QuestionForecastState(None, None, Nil, Nil, None, false)
 
+  /**
+   * Each step's timeout covers the waits it bounds: a model step reads the graph (three reads of up
+   * to 30 seconds and two pauses of 10) and calls the model (up to `Forecaster.Timeout`); the
+   * appraisal reads every document at once and then asks for the open points (`Appraiser.Timeout`
+   * each); the gathering asks for queries (`Gatherer.Timeout`) and then searches, each search with
+   * its retries. A step that fails or outlives its time anyway fails over to `abandon`, which
+   * leaves what it was doing settled and goes on, so the cohort's round always ends.
+   */
   override def settings: WorkflowSettings =
     WorkflowSettings.builder
-      .defaultStepTimeout(5.minutes)
-      .defaultRecovery(RecoverStrategy.maxRetries(0))
+      .defaultStepTimeout(StepTimeout)
+      .stepTimeout(QuestionForecast.appraising, AppraiseTimeout)
+      .stepTimeout(QuestionForecast.gathering, GatherTimeout)
+      .defaultRecovery(RecoverStrategy.maxRetries(0).failoverTo(QuestionForecast.abandoning))
+      .stepRecovery(QuestionForecast.abandoning, RecoverStrategy.maxRetries(2))
+      .stepRecovery(QuestionForecast.finish, RecoverStrategy.maxRetries(2))
       .build
 
   def start(plan: QuestionPlan): Effect[Done] =
@@ -457,6 +469,48 @@ final class QuestionForecast(context: WorkflowContext) extends Workflow[Question
       catch case e: CommandError if e.code == ErrorCode.Conflict => ()
     stepEffects.updateState(currentState).thenTransitionTo(QuestionForecast.finish.ref)
 
+  /**
+   * The failover of every step. Round 0: a pack not yet noted is noted as failed, an appraisal not
+   * yet held is held as failed. A round of runs: a venue not yet read is unreadable; the run in
+   * hand is recorded as failed, its reservation settled at what was reserved, when its model may
+   * have been called, and is noted as not made when nothing was reserved. Then on to the next run.
+   */
+  def abandonStep: StepEffect =
+    val held = cohort.call(CohortEntity.get).invoke().cohort.get
+    if plan.gather then
+      if !held.packs.contains(plan.question) then
+        cohort
+          .call(CohortEntity.notePack)
+          .invoke(NotePack(plan.question, PackNote.Failed(StepFailed), now)): Unit
+      else if held.arms.exists(Appraised.contains) && heldPack.exists(
+          !_.empty
+        ) && !heldAppraisal.held
+      then
+        try
+          client
+            .forEventSourcedEntity(EntityId(appraisalId))
+            .call(AppraisalEntity.fail)
+            .invoke(AppraisalFailed(StepFailed, None, Usage.zero, BigDecimal(0), now)): Unit
+        catch case e: CommandError if e.code == ErrorCode.Conflict => ()
+      stepEffects.updateState(currentState).thenTransitionTo(QuestionForecast.finish.ref)
+    else if currentState.venue.isEmpty then
+      next(currentState.copy(venue = Some(VenueSaid(None, unreadable = true))))
+    else
+      currentState.pending.headOption match
+        case None =>
+          stepEffects.updateState(currentState).thenTransitionTo(QuestionForecast.finish.ref)
+        case Some(run) =>
+          val runId = Ids.run(plan.cohort, plan.question, run.arm, run.repetition, run.attempt)
+          held.reserved.get(runId) match
+            case Some(amount) =>
+              record(
+                blank(run)
+                  .copy(ending = Ending.Failed(StepFailed), model = Some(plan.model), cost = amount)
+              )
+              cohort.call(CohortEntity.settle).invoke(Settle(runId, amount, now)): Unit
+              next(made(run, runId))
+            case None => notMade(run, StepFailed)
+
   /** Tells the cohort's workflow this question is done, and ends. */
   def finishStep: StepEffect =
     plan.parent.foreach { parent =>
@@ -565,6 +619,27 @@ object QuestionForecast
   val MaxAttempts = 5
 
   val finish = step("finish")(_.finishStep)
+
+  /** Where every step fails over to. */
+  val abandoning = step("abandon")(_.abandonStep)
+
+  /** Why a run, a pack or an appraisal was left by a step that failed or outlived its time. */
+  val StepFailed = "the step failed or did not finish in time"
+
+  /**
+   * A model step: the graph read, at most 30 + 10 + 30 + 10 + 30 seconds, and the model call, at
+   * most four minutes, with a minute for the calls around them.
+   */
+  val StepTimeout: FiniteDuration = 7.minutes
+
+  /** The appraisal: every document read at once, then the open points, three minutes each. */
+  val AppraiseTimeout: FiniteDuration = 8.minutes
+
+  /**
+   * The gathering: the queries, at most two minutes, then three searches one after another, each at
+   * most five attempts of 30 seconds and the pauses between them (`Exa.MaxPauseMs` at most each).
+   */
+  val GatherTimeout: FiniteDuration = 12.minutes
 
   val start = command("start")(_.start)
   val get   = query("get")(_.get)

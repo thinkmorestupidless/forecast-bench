@@ -59,8 +59,18 @@ final class ScriptedVenue(val name: String) extends Venue:
   def resolved(filter: VenueFilter): Either[VenueUnreadable, List[VenueQuestion]] =
     if unreadable then Left(VenueUnreadable(name, "scripted")) else Right(chosen(filter, true))
 
+  /**
+   * The next read of a question whose id starts with the prefix throws, once: the step reading it
+   * fails. Once, since scenario numbers repeat across suites and the venue is shared.
+   */
+  def throwsFor(prefix: String): Unit = throwing.add(prefix): Unit
+  private val throwing                = java.util.concurrent.ConcurrentHashMap.newKeySet[String]()
+
   def one(venueId: String): Either[VenueUnreadable, Option[VenueQuestion]] =
-    if unreadable then Left(VenueUnreadable(name, "scripted")) else Right(held(venueId))
+    val prefix = throwing.asScala.find(venueId.startsWith)
+    if prefix.exists(throwing.remove) then throw IllegalStateException("the scripted venue threw")
+    else if unreadable then Left(VenueUnreadable(name, "scripted"))
+    else Right(held(venueId))
 
 object ScriptedVenue:
 

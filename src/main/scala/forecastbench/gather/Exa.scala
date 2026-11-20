@@ -68,7 +68,9 @@ final class Exa(
         if code / 100 == 2 then Exa.decode(r.body).left.map(SearchFailed(name, _))
         else if (code == 429 || code / 100 == 5) && n < Exa.Attempts then
           val after = r.headers.firstValue("Retry-After").toScala.flatMap(_.trim.toLongOption)
-          pause(after.map(_ * 1000).getOrElse(Exa.FirstPauseMs << (n - 1)))
+          pause(
+            math.min(after.map(_ * 1000).getOrElse(Exa.FirstPauseMs << (n - 1)), Exa.MaxPauseMs)
+          )
           attempt(request, n + 1)
         else Left(SearchFailed(name, s"Exa answered $code"))
       }
@@ -80,6 +82,11 @@ object Exa:
   val Concurrent   = 4
   val Attempts     = 5
   val FirstPauseMs = 1000L
+
+  /**
+   * The longest pause, whatever Exa's `Retry-After` asks: the gathering step's timeout bounds them.
+   */
+  val MaxPauseMs = 10000L
 
   lazy val client: HttpClient =
     HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(10)).build()
