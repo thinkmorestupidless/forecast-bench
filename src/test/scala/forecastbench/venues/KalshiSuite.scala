@@ -32,11 +32,11 @@ class KalshiSuite extends munit.FunSuite:
           asked.add(uri)
           val path = ex.getRequestURI.getPath
           val body = path match
-            case "/markets" if uri.contains("cursor=recorded-cursor") =>
+            case "/events" if uri.contains("cursor=recorded-cursor") =>
               Some(recorded("last-page.json"))
-            case "/markets" if uri.contains("status=open")  => Some(recorded("open.json"))
-            case "/markets"                                 => Some(recorded("last-page.json"))
-            case "/historical/markets"                      => Some(recorded("last-page.json"))
+            case "/events" if uri.contains("status=open") => Some(recorded("events-open.json"))
+            case "/events" if uri.contains("status=settled") =>
+              Some(recorded("events-settled.json"))
             case p if p.startsWith("/events/KXFEDDECISION") => Some(recorded("event.json"))
             case s"/markets/$t" if t == Finalized           => Some(recorded("finalized.json"))
             case s"/historical/markets/$t" if t == Archived => Some(recorded("historical.json"))
@@ -75,14 +75,15 @@ class KalshiSuite extends munit.FunSuite:
       val p = fed.probability.get
       assertEquals((p.probability, p.rule), (0.395, "mid"))
       assert(fed.volume.exists(_ > 0))
-      // The second page is asked for by the cursor, and each event once.
+      // The events route with their markets, the second page by the cursor, and nothing else: no
+      // request for an event's category of its own.
       assert(asked.asScala.exists(_.contains("cursor=recorded-cursor")))
       assert(
         asked.asScala.forall(u =>
-          !u.startsWith("/markets") || u.contains("mve_filter=exclude") || !u.contains("?")
-        )
+          u.startsWith("/events?") && u.contains("with_nested_markets=true")
+        ),
+        asked.toString
       )
-      assertEquals(asked.asScala.count(_.startsWith("/events/KXFEDDECISION-27JAN")), 1)
   }
 
   kalshi.test("an untraded market with a wide spread gives no probability") { (venue, _) =>
@@ -100,6 +101,16 @@ class KalshiSuite extends munit.FunSuite:
       List(Fed)
     )
     assertEquals(venue.open(VenueFilter(limit = 1)).toOption.get.size, 1)
+  }
+
+  kalshi.test("an import of resolved questions reads only the settled markets of settled events") {
+    (venue, asked) =>
+      val resolved = venue.resolved(VenueFilter()).toOption.get
+      assertEquals(resolved.map(_.venueId), List("KXNEXTROMANIAPM-45JAN01-MISA"))
+      val q = resolved.head
+      assertEquals((q.outcome, q.category), (Some(OutcomeValue.No), Some("Elections")))
+      assertEquals(q.resolvedAt, Some(Instant.parse("2026-10-20T18:35:26.785348Z")))
+      assert(asked.asScala.exists(_.contains("status=settled")))
   }
 
   kalshi.test("a finalised market is read with its result and when it settled") { (venue, _) =>

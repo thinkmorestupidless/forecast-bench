@@ -14,9 +14,11 @@ import scala.util.Try
 
 /**
  * The `Venue` on Kalshi's public market data (research R9), written from replies read on 2026-11-19
- * (`src/test/resources/kalshi/`): no key; `GET /markets` by `status` with a `cursor`, combinations
- * of other markets left out by `mve_filter=exclude`; a market's category from its event; a market
- * settled before the historical cutoff from `/historical/markets`. Binary markets only.
+ * and 2026-11-20 (`src/test/resources/kalshi/`): no key. An import reads `GET /events` by `status`
+ * with its markets nested and a `cursor`, so each market has its event's category without a request
+ * of its own, and combinations of other markets are not listed. One market is read from
+ * `/markets/{ticker}`, else from the archive of markets settled before the historical cutoff,
+ * `/historical/markets/{ticker}`. Binary markets only.
  */
 final class Kalshi(
     base: String = Kalshi.Base,
@@ -27,22 +29,18 @@ final class Kalshi(
 
   import Kalshi.*
 
-  /**
-   * Each event's category, read once: an import of five hundred markets names a few dozen events.
-   */
+  /** Each event's category, read once, for the markets read one at a time. */
   private val categories = TrieMap.empty[String, Option[String]]
 
   def open(filter: VenueFilter): Either[VenueUnreadable, List[VenueQuestion]] =
-    listed(s"$base/markets", "open", filter)
+    listed("open", filter)(_.outcome.isEmpty)
 
-  /** Settled markets, then those the historical archive holds, until the filter's limit. */
+  /**
+   * The settled markets of settled events. A settled event can still hold an active market, and an
+   * event whose markets have moved to the archive is listed with none; neither gives a question.
+   */
   def resolved(filter: VenueFilter): Either[VenueUnreadable, List[VenueQuestion]] =
-    listed(s"$base/markets", "settled", filter).flatMap { live =>
-      if live.size >= filter.limit then Right(live)
-      else
-        listed(s"$base/historical/markets", "", filter.copy(limit = filter.limit - live.size))
-          .map(old => live ++ old.filterNot(o => live.exists(_.venueId == o.venueId)))
-    }
+    listed("settled", filter)(_.outcome.isDefined)
 
   def one(venueId: String): Either[VenueUnreadable, Option[VenueQuestion]] =
     val ticker = enc(venueId)
@@ -55,31 +53,31 @@ final class Kalshi(
         }
     }
 
-  private def listed(
-      route: String,
-      status: String,
-      filter: VenueFilter
+  /** The markets of the events of a status that the filter and `keep` choose, up to its limit. */
+  private def listed(status: String, filter: VenueFilter)(
+      keep: VenueQuestion => Boolean
   ): Either[VenueUnreadable, List[VenueQuestion]] =
-    val params = List(
-      Option.when(status.nonEmpty)(s"status=$status"),
-      Some("limit=1000"),
-      Some("mve_filter=exclude"),
-      filter.closesAfter.map(t => s"min_close_ts=${t.getEpochSecond}"),
-      filter.closesBefore.map(t => s"max_close_ts=${t.getEpochSecond}")
-    ).flatten
     def page(
         cursor: Option[String],
         held: List[VenueQuestion],
         pages: Int
     ): Either[VenueUnreadable, List[VenueQuestion]] =
-      val url = (params ++ cursor.map(c => s"cursor=${enc(c)}")).mkString(s"$route?", "&", "")
+      val url = (List(s"status=$status", "limit=200", "with_nested_markets=true") ++
+        cursor.map(c => s"cursor=${enc(c)}")).mkString(s"$base/events?", "&", "")
       fetch(url).flatMap {
-        case None => Left(VenueUnreadable(name, s"$route answered not found"))
+        case None => Left(VenueUnreadable(name, "the events route answered not found"))
         case Some(body) =>
-          decodePage(body).flatMap { p =>
-            val chosen = p.markets.flatMap(question).filter(chosenBy(filter))
-            val all    = held ++ chosen
-            val more   = p.cursor.filter(_.nonEmpty)
+          decode[EventsPage](body).flatMap { p =>
+            val chosen = for
+              e <- p.events
+              category = e.category.filter(_.nonEmpty)
+              _        = categories.putIfAbsent(e.event_ticker, category)
+              m <- e.markets
+              q <- Kalshi.toQuestion(m.copy(event_ticker = e.event_ticker), category, clock())
+              if keep(q) && chosenBy(filter)(q)
+            yield q
+            val all  = held ++ chosen
+            val more = p.cursor.filter(_.nonEmpty)
             if all.size >= filter.limit || more.isEmpty || pages >= MaxPages then
               Right(all.take(filter.limit))
             else page(more, all, pages + 1)
@@ -121,8 +119,8 @@ final class Kalshi(
         else Left(VenueUnreadable(name, s"Kalshi answered ${r.statusCode}"))
       }
 
-  private def decodePage(body: String): Either[VenueUnreadable, Page] =
-    Try(readFromString[Page](body)).toEither.left
+  private def decode[A: JsonValueCodec](body: String): Either[VenueUnreadable, A] =
+    Try(readFromString[A](body)).toEither.left
       .map(e => VenueUnreadable(name, s"Kalshi's reply could not be read: ${e.getMessage}"))
 
   private def decodeOne(body: String): Either[VenueUnreadable, Option[Market]] =
@@ -133,8 +131,11 @@ final class Kalshi(
 object Kalshi:
   val Base = "https://api.elections.kalshi.com/trade-api/v2"
 
-  /** At most this many pages of a thousand markets are read for one import. */
-  val MaxPages = 20
+  /**
+   * At most this many pages of two hundred events are read for one import: each takes about a
+   * second, and the import is one request to the bench, which answers within twenty.
+   */
+  val MaxPages = 10
 
   lazy val client: HttpClient =
     HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(10)).build()
@@ -159,12 +160,17 @@ object Kalshi:
       last_price_dollars: Option[String] = None,
       volume_fp: Option[String] = None
   )
-  final case class Page(markets: List[Market] = Nil, cursor: Option[String] = None)
+  final case class EventWithMarkets(
+      event_ticker: String,
+      category: Option[String] = None,
+      markets: List[Market] = Nil
+  )
+  final case class EventsPage(events: List[EventWithMarkets] = Nil, cursor: Option[String] = None)
   final case class One(market: Option[Market] = None)
   final case class Event(category: Option[String] = None)
   final case class EventReply(event: Event = Event())
 
-  given JsonValueCodec[Page]       = Codecs.make
+  given JsonValueCodec[EventsPage] = Codecs.make
   given JsonValueCodec[One]        = Codecs.make
   given JsonValueCodec[EventReply] = Codecs.make
 
