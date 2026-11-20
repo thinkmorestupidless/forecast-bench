@@ -196,6 +196,7 @@ hold the documents in what the model was given.
 - added `features/evidence/pack.feature`: a question the search finds nothing for has an empty pack
 - added `features/evidence/pack.feature`: an arm that takes evidence abstains on an empty pack
 - added `features/evidence/pack.feature`: a search that fails leaves the question without a pack and says so
+- added `features/evidence/pack.feature`: a pack holds no document that names a venue
 - added `features/arms/arms.feature`: the evidence arm is given what the model-alone arm is given and the evidence pack
 
 ---

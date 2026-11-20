@@ -76,5 +76,15 @@ class PackSuite extends munit.FunSuite:
       Pack.merge(List(quoted), 12, 2000, None).map(_.address),
       List("https://news/plain", "https://news/late")
     )
+    // The address and the source are given to an arm as well.
+    val addressed = List(
+      f("https://news/polymarket-bettors-shift-odds"),
+      Found("https://n/1", "t", "Kalshi News", Some(t.minusSeconds(86400)), "x"),
+      f("https://news/plain")
+    )
+    assertEquals(
+      Pack.merge(List(addressed), 12, 2000, None).map(_.address),
+      List("https://news/plain")
+    )
     // A cohort frozen under version 1 gathers as version 1 did.
     assertEquals(Pack.merge(List(quoted), 12, 2000, None, version = 1).size, 4)

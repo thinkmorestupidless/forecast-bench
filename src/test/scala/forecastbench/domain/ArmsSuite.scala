@@ -102,3 +102,9 @@ class ArmsSuite extends munit.FunSuite:
     val block = Arm.block(q).toLowerCase
     List("kalshi", "polymarket").foreach(v => assert(!block.contains(v), block))
     assert(block.contains("the venue is not affiliated"), block)
+    // A word the name begins is the name: KalshiEX is Kalshi's legal entity.
+    val entity = Arm.block(q.copy(criteria = "Settled by KalshiEX LLC and PolymarketUS."))
+    assert(
+      !entity.toLowerCase.contains("kalshi") && !entity.toLowerCase.contains("polymarket"),
+      entity
+    )

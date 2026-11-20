@@ -209,6 +209,20 @@ class PackFeatures extends FeatureSuite("features/evidence/pack.feature") with P
       ujson.write(devPack(ScriptedSearch.result(s"https://late.example/${world.n}", Some(day(d)))))
   }
 
+  When("the search finds a document published before it that gives the probability of {string}") {
+    (venue: String) =>
+      val before = day(world.held("pretended")).minus(java.time.Duration.ofDays(20))
+      world.held("pack") = ujson.write(
+        devPack(
+          ScriptedSearch.result(
+            s"https://quoted.example/${world.n}",
+            Some(before),
+            text = s"Traders on $venue think there is a 59% chance it happens."
+          )
+        )
+      )
+  }
+
   When("the search finds a document with no time it was published") { () =>
     world.held("pack") =
       ujson.write(devPack(ScriptedSearch.result(s"https://undated.example/${world.n}", None)))

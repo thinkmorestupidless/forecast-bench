@@ -28,7 +28,7 @@ final case class Gather(
 object Gatherer:
 
   /** The gatherer's current version: what a cohort frozen now gathers by. */
-  val Version = 2
+  val Version = forecastbench.domain.Pack.CurrentVersion
 
   final case class Queries(queries: List[String])
   private given JsonValueCodec[Queries] = Codecs.make

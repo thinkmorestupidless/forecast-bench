@@ -364,7 +364,7 @@ object CohortEndpoint:
     def refused(why: String, notMade: List[NotMade]) =
       Forecasting(409, None, None, Some(why), notMade)
 
-  /** The only gatherer and the only scoring method this feature has. */
+  /** The gatherer's version and the scoring method a cohort frozen now is fixed to. */
   val GathererVersion = forecastbench.gather.Gatherer.Version
   val ScoringMethod   = 1
 

@@ -57,7 +57,8 @@ object Arm:
       Pack.VenueHosts.map(java.util.regex.Pattern.quote).mkString("|") +
       """)(?:[/?#][^\s)\]>"']*)?""").r
   private val venueName =
-    ("""(?i)\b(?:""" + VenueNames.map(java.util.regex.Pattern.quote).mkString("|") + """)\b""").r
+    // A name and any word it begins: "KalshiEX", Kalshi's legal entity, is the venue's name too.
+    ("""(?i)\b(?:""" + VenueNames.map(java.util.regex.Pattern.quote).mkString("|") + """)\w*""").r
 
   /**
    * A text with every address on a venue's host left out and every venue's name read as "the

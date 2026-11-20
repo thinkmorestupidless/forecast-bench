@@ -22,7 +22,10 @@ The venue-price arm is the one arm with no `Given`; the step reads the venue ins
 ## What each arm's model is given
 
 Every model arm's user text begins with the same block, and nothing in any arm's text is the
-venue's probability, the venue's name, or the question's address at the venue:
+venue's probability, the venue's name, or the question's address at the venue. The statement and
+the criteria are blinded where the block is written: a venue's name, and any word it begins, is read
+as "the venue", and an address on a venue's host is left out. From gatherer version 2 no document
+of a pack names a venue in its title, address, source or excerpt (research R12):
 
 ```text
 Question: <statement>

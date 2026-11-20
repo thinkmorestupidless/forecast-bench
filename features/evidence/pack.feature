@@ -59,6 +59,11 @@ Feature: Evidence packs
     When the search finds a document published on "2025-05-20"
     Then that document is not in the pack
 
+  Scenario: a pack holds no document that names a venue
+    Given a frozen development cohort "rehearsal" with the pretended time "2025-05-01"
+    When the search finds a document published before it that gives the probability of "Kalshi"
+    Then that document is not in the pack
+
   Scenario: a development cohort's pack holds no document without a time it was published
     Given a frozen development cohort "rehearsal" with the pretended time "2025-05-01"
     When the search finds a document with no time it was published
