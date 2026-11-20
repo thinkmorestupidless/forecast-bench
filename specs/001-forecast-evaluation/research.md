@@ -284,7 +284,8 @@ question, its statement and two queries written by the cohort's model from the s
 criteria (`gatherer-queries`), ten results each from Exa with page text; results are merged by
 address, ordered by the search's own rank interleaved across searches, cut to twelve, each
 excerpt the first 2,000 characters of the text Exa returns. The venue's own pages are left out
-(they show the venue's probability). For a development cohort the search is asked for results
+(they show the venue's probability). Gatherer version `2` (2026-11-20, below) also leaves out a
+document whose title or excerpt names a venue. For a development cohort the search is asked for results
 published before the pretended time and any result with no published time, or a later one, is
 dropped. The key is `EXA_API_KEY`; without it gathering fails and says so.
 
@@ -556,6 +557,21 @@ the pull request is the independent one.
   - The graph sink under emulation on Apple silicon: both the sink and the reasoning service are
     amd64 images. About 260 claims from twenty appraisals were applied within tens of seconds,
     slowly enough to need the retried read. Two hundred questions are not measured.
+- 2026-11-20 (the review before the pull request, decided by the person): of the rehearsal's 209
+  documents, one news page gave the evidence, graph and prose arms Kalshi traders' odds ("a 59%
+  chance"). Gatherer version 2 leaves out, as it does a venue's own page, any document whose title
+  or excerpt names a venue, and the next result takes its place; each search's result addresses
+  stay on the pack, so what was left out can be seen. A cohort gathers by the version it was
+  frozen under.
+- 2026-11-20 (the review): a venue's resolution rules can name it ("Kalshi is not affiliated…") and
+  link to its pages, and one of the rehearsal's twenty questions gave that to every model arm. Every
+  model text starts with `Arm.block`, which now reads the venues' names as "the venue" and leaves
+  out their addresses. That covers questions already held.
+- 2026-11-20 (the review): a step that throws or outlives its timeout failed the question's
+  workflow, and the cohort's round never ended. Each step's timeout now covers the waits it bounds
+  (a model step 7 minutes, the appraisal 8, the gathering 12, with Exa's pause capped at 10
+  seconds). Every step fails over to `abandon`, which records the run in hand as failed at what it
+  reserved, or notes it as not made, holds a pack or an appraisal as failed, and goes on.
 
 ## Measurements
 
@@ -566,15 +582,16 @@ resolved before 2026-11-20, pretended time 2026-07-25), all five arms, one repet
 
 | Arm | Forecasts | Cost a forecast (USD) | Tokens a forecast | Model call, mean |
 |---|---|---|---|---|
-| venue-price | 0 of 20: the venue gave no probability at the pretended time | 0 | 0 | none |
+| venue-price | 0 of 20: a settled market gives no probability, so it abstains on every development question | 0 | 0 | none |
 | model-alone | 20 of 20 | 0.0115 | 1,030 | 5.2 s |
 | evidence | 20 of 20 | 0.0400 | 8,412 | 4.4 s |
-| graph | 19 of 20: one appraisal failed on a true misquote | 0.4889 | 29,538 | 4.7 s |
-| prose | 19 of 20: the same appraisal | 0.4907 | 29,802 | 5.0 s |
+| graph | 19 of 20: one appraisal failed on a true misquote | 0.3069 | 29,538 | 4.7 s |
+| prose | 19 of 20: the same appraisal | 0.3087 | 29,802 | 5.0 s |
 
-- The graph and prose costs each count the whole appraisal (FR-027), so the cohort spent
-  $12.73 in all, less than the sum of its runs' costs, about $20.6. That is about $0.64 a
-  question for all five arms; the appraisal is most of it.
+- The graph and prose costs each hold half the appraisal, $0.182 a run (FR-027), so the runs'
+  costs add up to what the cohort spent, $12.73: about $0.64 a question for all five arms. The
+  appraisal, about $0.36 a question, is most of it. (The report route first gave $0.4889 and
+  $0.4907, counting the share twice; the review found it.)
 - Forecasting twenty questions took 1 min 41 s from the forecast route to the last run recorded,
   packs gathered and appraisals made within it (`rehearsal-2`: 2 min 3 s).
 - Brier scores over the twenty (17 resolved no, 3 yes): model-alone 0.0785, evidence 0.0735,

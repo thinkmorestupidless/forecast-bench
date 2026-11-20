@@ -20,7 +20,8 @@ What the bench does not do, and what it has not proven. Nothing here is promised
 - **Development cohorts show nothing.** A development question was resolved before it was imported,
   and the model may have learnt its outcome. A development cohort's report says so on its face, and
   a report over several cohorts leaves development cohorts out. A pretended time limits the evidence
-  to documents published before it; it cannot limit what the model already knows.
+  to documents published before it; it cannot limit what the model already knows. The venue-price
+  arm abstains on every development question: a settled market gives no probability.
 - **Activity is not evidence until it is counted.** A comparison of fewer than 30 questions gives
   its count and no difference; under 100 it is marked preliminary. No result is claimed of a cohort
   that has not reached those counts, and none has yet.
@@ -34,7 +35,13 @@ What the bench does not do, and what it has not proven. Nothing here is promised
 - **The budget can be passed by in-flight runs.** A run reserves an estimate of its cost before its
   model is called, and the bench stops making runs when reservations reach the budget. Runs already
   reserved settle at what they cost, so a cohort can end over its budget by at most one run's cost
-  for each question in flight (`bench.concurrency`, six by default).
+  for each question in flight (`bench.concurrency`, six by default). A graph or prose run reserves
+  its share of the appraisal with its own call, so a cohort can stop earlier than its spending
+  alone would make it.
+- **A step that fails is settled, not retried.** A step that throws or outlives its timeout leaves
+  its run recorded as failed at what it reserved (the model may have been called), or not made when
+  nothing was reserved; a gathering or an appraisal is held as failed. The round goes on and ends.
+  `just retry` makes a failed run again as a new attempt.
 - **Outcomes are polled.** They are read from the venues on the hour, or when asked. A venue that
   cannot be read is named and changes nothing; an outcome waits until it can be.
 - **One model provider.** The bench has a client for Anthropic's models only; a cohort names one
@@ -45,8 +52,12 @@ What the bench does not do, and what it has not proven. Nothing here is promised
 ## The venues
 
 - Kalshi and Polymarket are read through their public market data, without a key, as their replies
-  were on 2026-11-19 (`src/test/resources/kalshi/`, `src/test/resources/polymarket/`). A change to
-  either shape breaks the import until the venue's code follows.
+  were on 2026-11-19 and, for Kalshi, as read against the live venue on 2026-11-20
+  (`src/test/resources/kalshi/`, `src/test/resources/polymarket/`). A change to either shape breaks
+  the import until the venue's code follows. Polymarket has not been read against the live venue.
+- A venue's resolution rules often name it and link to its pages. Every text a model is given has
+  the venues' names read as "the venue" and their addresses left out; a news page in a pack that
+  quotes a venue's odds is not filtered (only the venues' own pages are).
 - A void market's representation at each venue was inferred from the documentation and from markets
   of 2020, not observed on a recent market.
 - Polymarket's category is its first tag, which is sometimes a promotional label; such a category is
@@ -58,13 +69,18 @@ What the bench does not do, and what it has not proven. Nothing here is promised
 
 ## What is unproven
 
-- **No cohort has been run against the real edges yet.** Every scenario runs through the real routes
-  with a scripted model, search, venues and reasoning service. The live suite (`just live`) and the
-  hand-run of the quickstart's development cohort against Kalshi, Exa, the model and the reasoning
-  service are the first contact with them; until they have run, the cost and latency of each arm,
-  and the time to forecast a cohort, are estimates.
-- **Exa's replies are written from its documentation**, not recorded from a call with a key.
+- **One rehearsal against the real edges.** Three development cohorts of the same twenty Kalshi
+  questions were forecast by all five arms against Kalshi, Exa, the model and the reasoning service
+  on 2026-11-20; `specs/001-forecast-evaluation/research.md` records what they found and what they
+  cost. Every other scenario runs through the real routes with a scripted model, search, venues and
+  reasoning service. Polymarket, and a cohort of two hundred questions, have not run live.
 - **The reasoning service is played by a script in the suites**, written from its documented routes
-  at 0.1.1. The live suite is the only check against the service itself.
-- **The spread of the graph and prose differences is unknown**, so the number of questions the first
-  prospective cohort needs to show a difference, if there is one, is not yet known.
+  at 0.1.1. The live suite and the rehearsal are the only checks against the service itself. Its
+  graph sink and the service run under emulation on Apple silicon; twenty appraisals at once lagged
+  it enough to need the retried read, and two hundred are not measured.
+- **A view read past a thousand rows is not observed.** The routes ask for explicit limits; no view
+  held a thousand rows in the rehearsal.
+- **The spread of the graph and prose differences is not yet known for prospective questions.**
+  The rehearsal's twenty, mostly near-certain, gave a spread of 0.014, which says nothing of
+  uncertain questions; the first prospective cohort is sized on the assumed 0.10 until it gives its
+  own.
