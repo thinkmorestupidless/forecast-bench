@@ -28,14 +28,18 @@ final class VenueEndpoint(client: ComponentClient) extends HttpEndpoint("/venues
       closesAfter = body.closesAfter,
       closesBefore = body.closesBefore,
       leastVolume = body.leastVolume,
-      limit = body.limit.getOrElse(500)
+      // The venue is asked for enough to choose from: the limit counts the questions held, after
+      // those left out and, with `onePerEvent`, after an event's markets are made one.
+      limit = math.max(body.limit.getOrElse(VenueEndpoint.Limit), VenueEndpoint.Limit)
     )
     val read =
       if standing == Standing.Development then venue.resolved(filter) else venue.open(filter)
     val listed = read.fold(_ => throw HttpProblem(503, "the venue could not be read"), identity)
     val (kept, leftOut) = VenueEndpoint.screen(listed)
     val chosen          = kept.filter(q => filter.leastVolume.forall(v => q.volume.exists(_ >= v)))
-    val one = if body.onePerEvent.getOrElse(true) then VenueEndpoint.onePerEvent(chosen) else chosen
+    val one =
+      (if body.onePerEvent.getOrElse(true) then VenueEndpoint.onePerEvent(chosen) else chosen)
+        .take(body.limit.getOrElse(VenueEndpoint.Limit))
     val domains = client.forKeyValueEntity(EntityId(name)).call(DomainsEntity.get).invoke()
     val now     = Bench.edges.clock.now
     val results = one.map { q =>
@@ -100,6 +104,11 @@ object VenueEndpoint:
    * Of an event's markets, the one whose probability is nearest a half (research R9), so a ladder
    * of strikes is one question; with no probability to go by, the first by its id.
    */
+  /**
+   * The most questions an import holds unless it says fewer, and the least it reads to choose from.
+   */
+  val Limit = 500
+
   def onePerEvent(questions: List[VenueQuestion]): List[VenueQuestion] =
     questions
       .groupBy(_.eventGroup)
