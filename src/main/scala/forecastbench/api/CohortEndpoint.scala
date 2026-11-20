@@ -265,23 +265,26 @@ final class CohortEndpoint(client: ComponentClient, views: ViewClient)
 
   /**
    * Every run of the cohort, read from the runs themselves and not the view, which may not yet hold
-   * the run that just failed: each question, arm and repetition, attempt after attempt.
+   * the run that just failed: each question, arm and repetition, attempt after attempt, a bounded
+   * number of them read at once.
    */
   private def recorded(c: Cohort): List[RunRecorded] =
-    c.runs.flatMap { (q, a, r) =>
-      Iterator
-        .from(1)
-        .map(n =>
-          client
-            .forEventSourcedEntity(EntityId(Ids.run(c.id, q, a, r, n)))
-            .call(RunEntity.get)
-            .invoke()
-            .run
-        )
-        .takeWhile(_.isDefined)
-        .flatten
-        .toList
-    }
+    forecastbench.application.Bounded
+      .map(c.runs, forecastbench.application.OutcomeReader.Parallel) { (q, a, r) =>
+        Iterator
+          .from(1)
+          .map(n =>
+            client
+              .forEventSourcedEntity(EntityId(Ids.run(c.id, q, a, r, n)))
+              .call(RunEntity.get)
+              .invoke()
+              .run
+          )
+          .takeWhile(_.isDefined)
+          .flatten
+          .toList
+      }
+      .flatten
 
   private def read(id: String): Cohort =
     cohort(id)

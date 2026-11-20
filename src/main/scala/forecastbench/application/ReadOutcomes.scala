@@ -6,7 +6,6 @@ import com.thinkmorestupidless.ankka.sdk.*
 import forecastbench.domain.OutcomeReading
 
 import java.time.Instant
-import java.util.concurrent.{Callable, Executors, Semaphore}
 
 /** The questions whose outcomes the bench reads: every question of a frozen cohort. */
 final case class Watched(questions: List[String])
@@ -77,22 +76,7 @@ object OutcomeReader:
           case Some(Right(None)) => (0, None)
           case _                 => (0, Some(q.venue))
       }
-    // Each question on a virtual thread, at most `Parallel` at once: read one by one, the reading
-    // of a few thousand questions outlasts the route's timeout.
-    val pool    = Executors.newVirtualThreadPerTaskExecutor()
-    val permits = Semaphore(Parallel)
-    val results =
-      try
-        watched
-          .map(id =>
-            pool.submit((() =>
-              permits.acquire()
-              try one(id)
-              finally permits.release()
-            ): Callable[Option[(Int, Option[String])]])
-          )
-          .flatMap(_.get())
-      finally pool.shutdown()
+    val results = Bounded.map(watched, Parallel)(one).flatten
     OutcomesRead(results.size, results.map(_._1).sum, results.flatMap(_._2).distinct.sorted)
 
 /** Reads outcomes on the hour (`bench.outcomes-every`), scheduled when the service starts. */
