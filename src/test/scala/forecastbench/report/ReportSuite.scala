@@ -143,6 +143,29 @@ class ReportSuite extends munit.FunSuite:
     assertEquals(arms("venue-price").costPerForecast, None)
     assertEquals(arms("model-alone").runs, RunCounts(56, 0, 0))
 
+  test("a report scores by its cohorts' one method, and refuses cohorts frozen under two"):
+    assertEquals(Report.methodOf(List(cohort), 9), Right(1))
+    assertEquals(Report.methodOf(List(cohort.copy(scoringMethod = None)), 9), Right(9))
+    assert(
+      Report
+        .methodOf(List(cohort, cohort.copy(id = "december", scoringMethod = Some(2))), 1)
+        .left
+        .exists(_.contains("different methods (1, 2)"))
+    )
+
+  test("a graph run's cost, which holds its share of the appraisal, is counted once"):
+    // Each graph run cost 0.01 for its own call and 0.04 for its share of the appraisal, recorded
+    // together as 0.05 (FR-027): 56 runs at 0.05 over 56 forecasts is 0.05 a forecast, not 0.09.
+    val graph = questions.keys.toList.sorted.map(q =>
+      run(q, "graph", 0.8).copy(cost = BigDecimal("0.05"), appraisalShare = BigDecimal("0.04"))
+    )
+    val withGraph = cohort.copy(arms = List("model-alone", "graph"))
+    val r         = Report.build(List(withGraph), questions, graph, Scoring.One, start)
+    assertEquals(
+      r.arms.find(_.arm == "graph").flatMap(_.costPerForecast),
+      Some(BigDecimal("0.050000"))
+    )
+
   test("calibration: every forecast of the model-alone arm in the band from 0.8"):
     val bands = report.calibration.find(_.arm == "model-alone").get.bands
     assertEquals(bands(8).count, 50)

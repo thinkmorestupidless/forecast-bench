@@ -76,6 +76,20 @@ final case class Report(
 
 object Report:
 
+  /**
+   * The one scoring method a report over the cohorts scores by: the method they were frozen under,
+   * or `current` when none is frozen. Cohorts frozen under different methods are refused, since one
+   * method's scores are not another's.
+   */
+  def methodOf(cohorts: List[Cohort], current: Int): Either[String, Int] =
+    cohorts.flatMap(_.scoringMethod).distinct match
+      case Nil      => Right(current)
+      case m :: Nil => Right(m)
+      case many =>
+        Left(
+          s"the cohorts were scored by different methods (${many.sorted.mkString(", ")}); report them apart"
+        )
+
   val Development  = "development: the model may know these outcomes"
   val NothingKnown = "nothing is known yet"
 
@@ -191,7 +205,7 @@ object Report:
           armRuns.count(_.ending.isInstanceOf[Ending.Failed])
         ),
         Option.when(usesModel && forecasts > 0)(
-          (armRuns.map(r => r.cost + r.appraisalShare).sum / forecasts)
+          (armRuns.map(_.cost).sum / forecasts)
             .setScale(6, BigDecimal.RoundingMode.HALF_UP)
         ),
         Option.when(usesModel)(mean(armRuns.flatMap(_.usage).map(_.total.toDouble))).flatten,

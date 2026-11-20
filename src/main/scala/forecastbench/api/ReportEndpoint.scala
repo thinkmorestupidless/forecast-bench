@@ -77,8 +77,9 @@ final class Reports(client: ComponentClient, views: ViewClient):
       }
       .toMap
     val runs = cohorts.flatMap(c => Runs.of(views, Some(c.id), None, None).map(_.run))
-    val version =
-      cohorts.flatMap(_.scoringMethod).headOption.getOrElse(CohortEndpoint.ScoringMethod)
+    val version = Report
+      .methodOf(cohorts, CohortEndpoint.ScoringMethod)
+      .fold(why => throw HttpProblem(422, why), identity)
     val method = Bench.edges.scoring.getOrElse(version, Scoring.One)
     Report.build(cohorts, questions, runs, method, Bench.edges.clock.now)
 
