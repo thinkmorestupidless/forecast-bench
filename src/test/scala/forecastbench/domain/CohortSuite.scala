@@ -128,6 +128,17 @@ class CohortSuite extends munit.FunSuite:
       Right(List(Cohort.BudgetSpent))
     )
 
+  test("a run settled twice is counted once: the second settle has no reservation"):
+    var c = frozen
+    c = run(c, Cohort.reserving(c, ("q1", "graph", 1), "r1", BigDecimal(1), now))
+    c = run(c, Cohort.settling(c, "r1", BigDecimal(1), now))
+    assertEquals(Cohort.settling(c, "r1", BigDecimal("0.7"), now), Right(Nil))
+    assertEquals(c.get.spent, BigDecimal(1))
+
+  test("a pack is noted once: a gathering that ends late leaves the first note"):
+    val c = run(frozen, Cohort.notingPack(frozen, "q1", PackNote.Failed("abandoned"), now))
+    assertEquals(Cohort.notingPack(c, "q1", PackNote.Gathered, now), Right(Nil))
+
   test("a reservation after the window is refused and the run noted"):
     val d = Cohort.reserving(
       frozen,

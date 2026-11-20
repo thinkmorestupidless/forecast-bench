@@ -238,8 +238,12 @@ object Cohort:
       case Some(c) if c.frozen => decide(c)
       case _                   => Left(Conflict(IsNotFrozen))
 
+  /**
+   * A question's pack is noted once: a gathering that ends after its step was abandoned, and noted
+   * failed, changes nothing.
+   */
   def notingPack(held: Option[Cohort], q: String, note: PackNote, now: Instant): Decision =
-    frozenOnly(held)(_ => Right(List(PackNoted(q, note, now))))
+    frozenOnly(held)(c => Right(if c.packs.contains(q) then Nil else List(PackNoted(q, note, now))))
 
   def noting(held: Option[Cohort], note: String, now: Instant): Decision =
     frozenOnly(held)(_ => Right(List(Noted(note, now))))
@@ -299,8 +303,15 @@ object Cohort:
   ): Decision =
     frozenOnly(held)(c => Right(notMadeFor(c, List(run), why, now)))
 
+  /**
+   * A reservation settled at what its run cost; a run with no reservation in hand, already settled
+   * (by `abandon`, while its step ran on past its timeout), changes nothing, so no cost is counted
+   * twice.
+   */
   def settling(held: Option[Cohort], runId: String, cost: BigDecimal, now: Instant): Decision =
-    frozenOnly(held)(_ => Right(List(Settled(runId, cost, now))))
+    frozenOnly(held)(c =>
+      Right(if c.reserved.contains(runId) then List(Settled(runId, cost, now)) else Nil)
+    )
 
   def apply(held: Option[Cohort], event: CohortEvent): Option[Cohort] = event match
     case CohortDrafted(id, standing, model, pretended, at) =>

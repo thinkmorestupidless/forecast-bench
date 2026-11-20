@@ -298,12 +298,12 @@ final class QuestionForecast(context: WorkflowContext) extends Workflow[Question
             appraisalShare = share,
             latencyMs = forecast.latencyMs
           )
-          record(recorded)
+          val ours = record(recorded)
           cohort.call(CohortEntity.settle).invoke(Settle(runId, forecast.cost + share, now)): Unit
           for
             (m, content) <- appraisal
             p            <- forecast.ending.forecast
-            if run.arm == Arms.graph.name
+            if ours && run.arm == Arms.graph.name
           do believe(runId, run, p, forecast.reasons, m, content)
           next(made(run, runId))
 
@@ -501,7 +501,18 @@ final class QuestionForecast(context: WorkflowContext) extends Workflow[Question
           stepEffects.updateState(currentState).thenTransitionTo(QuestionForecast.finish.ref)
         case Some(run) =>
           val runId = Ids.run(plan.cohort, plan.question, run.arm, run.repetition, run.attempt)
+          val recorded = client
+            .forEventSourcedEntity(EntityId(runId))
+            .call(RunEntity.get)
+            .invoke()
+            .run
+            .isDefined
           held.reserved.get(runId) match
+            // Recorded before the step failed: the run stands as recorded; settle what is reserved.
+            case Some(amount) if recorded =>
+              cohort.call(CohortEntity.settle).invoke(Settle(runId, amount, now)): Unit
+              next(made(run, runId))
+            case None if recorded => next(made(run, runId))
             case Some(amount) =>
               record(
                 blank(run)
@@ -567,15 +578,20 @@ final class QuestionForecast(context: WorkflowContext) extends Workflow[Question
     venue = None
   )
 
-  /** The run, recorded once; a run refused as already recorded or too late is left as it is. */
-  private def record(run: RunRecorded): Unit =
+  /**
+   * The run, recorded once; a run refused as already recorded or too late is left as it is. True
+   * when this call recorded it: a step that ran on past its timeout finds its run already recorded
+   * as failed by `abandon`, and writes nothing of its own after it.
+   */
+  private def record(run: RunRecorded): Boolean =
     val q = question
     try
       client
         .forEventSourcedEntity(EntityId(run.id))
         .call(RunEntity.record)
         .invoke(Record(run, QuestionNow(q.standing, q.closesAt, q.current.isDefined))): Unit
-    catch case e: CommandError if e.code == ErrorCode.Conflict => ()
+      true
+    catch case e: CommandError if e.code == ErrorCode.Conflict => false
 
 object QuestionForecast
     extends Workflow.Companion[QuestionForecast, QuestionForecastState](
@@ -637,9 +653,11 @@ object QuestionForecast
 
   /**
    * The gathering: the queries, at most two minutes, then three searches one after another, each at
-   * most five attempts of 30 seconds and the pauses between them (`Exa.MaxPauseMs` at most each).
+   * most five attempts of 30 seconds and the pauses between them (`Exa.MaxPauseMs` at most each),
+   * about eleven and a half minutes; and the wait for one of Exa's bench-wide slots, which six
+   * questions gathering at once can make as long again as a search.
    */
-  val GatherTimeout: FiniteDuration = 12.minutes
+  val GatherTimeout: FiniteDuration = 20.minutes
 
   val start = command("start")(_.start)
   val get   = query("get")(_.get)
