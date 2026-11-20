@@ -1,6 +1,7 @@
 package forecastbench.gather
 
 import java.time.Instant
+import scala.jdk.CollectionConverters.*
 
 class ExaSuite extends munit.FunSuite:
 
@@ -44,3 +45,48 @@ class ExaSuite extends munit.FunSuite:
       Exa.Request("q", 10, "auto", Some("2025-05-01T00:00:00Z"), Exa.Contents(Exa.Text(2000)))
     )
     assert(some.contains(""""endPublishedDate":"2025-05-01T00:00:00Z""""), some)
+
+  /** A loopback Exa answering each search with the next status, then the recorded reply. */
+  private def answering(statuses: Int*)(check: (Exa, () => List[Long]) => Unit): Unit =
+    val left = java.util.concurrent.ConcurrentLinkedQueue[Int](statuses.toList.asJava)
+    val server =
+      com.sun.net.httpserver.HttpServer.create(java.net.InetSocketAddress("127.0.0.1", 0), 0)
+    server.createContext(
+      "/search",
+      ex =>
+        val status = Option(left.poll()).getOrElse(200)
+        val body   = (if status == 200 then reply("search.json") else "{}").getBytes("UTF-8")
+        if status == 429 && left.isEmpty then ex.getResponseHeaders.add("Retry-After", "3")
+        ex.sendResponseHeaders(status, body.length.toLong)
+        ex.getResponseBody.write(body)
+        ex.close()
+    )
+    server.start()
+    val paused = java.util.concurrent.ConcurrentLinkedQueue[Long]()
+    try
+      val exa = Exa(
+        Some("k"),
+        2000,
+        pause = ms => paused.add(ms): Unit,
+        endpoint = s"http://127.0.0.1:${server.getAddress.getPort}/search"
+      )
+      check(exa, () => paused.asScala.toList)
+    finally server.stop(0)
+
+  test("a 429 or a 5xx is asked again after a pause that doubles, or Exa's Retry-After"):
+    answering(429, 503, 429) { (exa, paused) =>
+      assertEquals(exa.search("q", None, 10).map(_.size), Right(2))
+      assertEquals(paused(), List(1000L, 2000L, 3000L))
+    }
+
+  test("a search Exa keeps refusing fails after its attempts, saying how Exa answered"):
+    answering(List.fill(Exa.Attempts)(429)*) { (exa, paused) =>
+      assertEquals(exa.search("q", None, 10), Left(SearchFailed("exa", "Exa answered 429")))
+      assertEquals(paused().size, Exa.Attempts - 1)
+    }
+
+  test("a refusal that is not a limit is not asked again"):
+    answering(401) { (exa, paused) =>
+      assertEquals(exa.search("q", None, 10), Left(SearchFailed("exa", "Exa answered 401")))
+      assertEquals(paused(), Nil)
+    }
