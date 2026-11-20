@@ -49,9 +49,31 @@ object Arm:
 
   def when(t: Instant): String = time.format(t)
 
-  /** The block every model arm's user text begins with. Nothing of the venue is in it. */
+  /** The venues' names, as a model could be given them. */
+  val VenueNames: List[String] = List("Kalshi", "Polymarket")
+
+  private val venueAddress =
+    ("""(?i)(?:https?://)?(?:[a-z0-9-]+\.)*(?:""" +
+      Pack.VenueHosts.map(java.util.regex.Pattern.quote).mkString("|") +
+      """)(?:[/?#][^\s)\]>"']*)?""").r
+  private val venueName =
+    ("""(?i)\b(?:""" + VenueNames.map(java.util.regex.Pattern.quote).mkString("|") + """)\b""").r
+
+  /**
+   * A text with every address on a venue's host left out and every venue's name read as "the
+   * venue".
+   */
+  def blind(text: String): String =
+    venueName.replaceAllIn(venueAddress.replaceAllIn(text, ""), "the venue")
+
+  /**
+   * The block every model arm's user text begins with, and the gatherer's and the appraisal's.
+   * Nothing of the venue is in it: a venue's rules often name it and link to its pages, so the
+   * statement and the criteria are blinded here, where every model text starts, which covers
+   * questions already held.
+   */
   def block(q: QuestionGiven): String =
-    s"""Question: ${q.statement}
-       |Resolution criteria: ${q.criteria}
+    s"""Question: ${blind(q.statement)}
+       |Resolution criteria: ${blind(q.criteria)}
        |Closes: ${when(q.closesAt)}
        |Now: ${when(q.now)}""".stripMargin

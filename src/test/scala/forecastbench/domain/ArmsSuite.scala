@@ -90,3 +90,15 @@ class ArmsSuite extends munit.FunSuite:
     val p = Instructions.latest("prose").get.text.linesIterator.toList
     assertEquals(g.size, p.size)
     assertEquals(g.zip(p).count(_ != _), 1)
+
+  test("a venue's name and its addresses are blinded wherever the question gives them"):
+    val q = QuestionGiven(
+      "Will Polymarket list it?",
+      "Resolves per KALSHI rules (https://kalshi-public-docs.s3.amazonaws.com/x.pdf, " +
+        "www.kalshi.com/markets/kx). Kalshi is not affiliated; see polymarket.com.",
+      java.time.Instant.parse("2026-12-01T00:00:00Z"),
+      java.time.Instant.parse("2026-11-01T00:00:00Z")
+    )
+    val block = Arm.block(q).toLowerCase
+    List("kalshi", "polymarket").foreach(v => assert(!block.contains(v), block))
+    assert(block.contains("the venue is not affiliated"), block)

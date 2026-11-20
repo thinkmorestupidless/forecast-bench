@@ -113,6 +113,13 @@ class KalshiSuite extends munit.FunSuite:
       assert(asked.asScala.exists(_.contains("status=settled")))
   }
 
+  kalshi.test("no model is given Kalshi's name or an address on its host from its rules") {
+    (venue, _) =>
+      Blinded.check(
+        venue.open(VenueFilter()).toOption.get ++ venue.resolved(VenueFilter()).toOption.get
+      )
+  }
+
   kalshi.test("a finalised market is read with its result and when it settled") { (venue, _) =>
     val q = venue.one(Finalized).toOption.flatten.get
     assertEquals(q.outcome, Some(OutcomeValue.No))

@@ -12,8 +12,8 @@ class ArmsFeatures extends FeatureSuite("features/arms/arms.feature") with PackS
       val texts = requestsOf(a).map(r => ScriptedModel.text(r))
       assert(texts.nonEmpty, s"the arm $a was not given anything")
       texts.foreach { t =>
-        List("0.48", "0.52", "kalshi", "polymarket", world.venueId("rates")).foreach(v =>
-          assert(!t.contains(v), s"the arm $a was given '$v': $t")
+        List("0.48", "0.52", "kalshi", "polymarket", world.venueId("rates").toLowerCase).foreach(
+          v => assert(!t.toLowerCase.contains(v), s"the arm $a was given '$v': $t")
         )
       }
     }
