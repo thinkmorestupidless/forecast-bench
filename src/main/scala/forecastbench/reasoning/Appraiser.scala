@@ -1,6 +1,6 @@
 package forecastbench.reasoning
 
-import com.github.plokhotnyuk.jsoniter_scala.core.{JsonValueCodec, readFromString}
+import com.github.plokhotnyuk.jsoniter_scala.core.JsonValueCodec
 import com.thinkmorestupidless.ankka.agent.{ChatMessage, ModelRequest}
 import com.thinkmorestupidless.ankka.core.Codecs
 import forecastbench.application.{Instruction, Models}
@@ -38,9 +38,6 @@ object Appraiser:
 
   val NotClaims     = "the reader's answer was not claims"
   val NotOpenPoints = "the answer was not open points"
-
-  private def json(reply: String): String =
-    reply.trim.stripPrefix("```json").stripPrefix("```").stripSuffix("```").trim
 
   /** The claims for the open-points call: each with its stance and its document. */
   def claimsText(claims: List[CheckedClaim]): String =
@@ -96,11 +93,9 @@ object Appraiser:
           case (Right(done), (d, reply)) =>
             for
               text <- reply.left.map(failed(_, Some(s"document [${d.n}]")))
-              stated <- scala.util
-                .Try(readFromString[Stated](json(text)))
-                .toEither
-                .left
-                .map(_ => failed(NotClaims, Some(s"document [${d.n}]")))
+              stated <- forecastbench.domain.Reply
+                .read[Stated](text)
+                .toRight(failed(NotClaims, Some(s"document [${d.n}]")))
               ok <- Appraisal
                 .check(d, stated.claims)
                 .left
@@ -111,11 +106,9 @@ object Appraiser:
       open <- ask(openPoints.text, Arm.block(a.asked) + "\nClaims:\n" + claimsText(checked)).left
         .map(failed(_, Some("the open points")))
         .flatMap(t =>
-          scala.util
-            .Try(readFromString[Open](json(t)))
-            .toEither
-            .left
-            .map(_ => failed(NotOpenPoints, Some("the open points")))
+          forecastbench.domain.Reply
+            .read[Open](t)
+            .toRight(failed(NotOpenPoints, Some("the open points")))
         )
         .map(_.openPoints.map(_.trim).filter(_.nonEmpty))
       // 4. The records written, in order; each write is safe to send again.

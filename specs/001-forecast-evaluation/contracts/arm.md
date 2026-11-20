@@ -64,11 +64,16 @@ The system text (the arm's instructions) ends with the form of the answer:
 {"probability": 0.62, "abstain": null, "reasons": ["c3", "c5"], "rationale": "one or two sentences"}
 ```
 
+The reply is read as that object: the reply itself, optionally in a fenced block; or, when the
+model wrote anything before or after it, the last JSON object in the reply. Whichever is read must
+be of the form. The whole reply is kept as answered either way. The appraisal's reader and its
+open points, and the gatherer's queries, are read the same way.
+
 | Reply | The run ends |
 |---|---|
 | `probability` a number from 0 to 1, `abstain` null | `Forecast(probability)` |
 | `probability` null, `abstain` a sentence | `Abstained(that sentence)` |
-| not JSON of this form; `probability` outside 0 to 1 or not a number; both or neither set | `Failed("the answer was not a probability")` |
+| no JSON object of this form; `probability` outside 0 to 1 or not a number; both or neither set | `Failed("the answer was not a probability")` |
 | the provider errors or times out | `Failed("the model could not be reached")` |
 
 `reasons` is read for the graph arm only and ignored for the others.

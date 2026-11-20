@@ -1,6 +1,6 @@
 package forecastbench.domain
 
-import com.github.plokhotnyuk.jsoniter_scala.core.{JsonValueCodec, readFromString}
+import com.github.plokhotnyuk.jsoniter_scala.core.JsonValueCodec
 import com.thinkmorestupidless.ankka.core.Codecs
 
 import java.time.Instant
@@ -46,15 +46,13 @@ object Answer:
   private given JsonValueCodec[Answer] = Codecs.make
 
   /**
-   * How a reply ends a run, and the reasons it named. A reply is one JSON object, optionally in a
-   * fenced block; anything else, a probability outside nought to one, or both or neither of
-   * `probability` and `abstain`, is not a probability.
+   * How a reply ends a run, and the reasons it named. A reply is read as JSON by `Reply`: itself,
+   * optionally in a fenced block, else its last JSON object. Anything with no object of the form, a
+   * probability outside nought to one, or both or neither of `probability` and `abstain`, is not a
+   * probability.
    */
   def read(reply: String): (Ending, List[String]) =
-    val text = reply.trim.stripPrefix("```json").stripPrefix("```").stripSuffix("```").trim
-    val answer =
-      try Some(readFromString[Answer](text))
-      catch case _: Exception => None
+    val answer = Reply.read[Answer](reply)
     answer match
       case Some(Answer(Some(p), None, reasons, _)) if p >= 0.0 && p <= 1.0 && !p.isNaN =>
         (Ending.Forecast(p), reasons.getOrElse(Nil))

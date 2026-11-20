@@ -43,3 +43,13 @@ class AnswerSuite extends munit.FunSuite:
       Ending.Failed(Answer.NotAProbability)
     )
     assertEquals(ending("""{}"""), Ending.Failed(Answer.NotAProbability))
+
+  test("reasoning before the answer: the reply's last JSON object is read"):
+    val reply =
+      "I estimate about 9%. A $6.20 strike {would} set a record.\n\n" +
+        """{"probability": 0.09, "abstain": null, "reasons": ["c1"], "rationale": "a \"}\" inside"}"""
+    assertEquals(Answer.read(reply), (Ending.Forecast(0.09), List("c1")))
+
+  test("a last JSON object not of the form is still not a probability"):
+    assertEquals(ending("""About 40%. {"estimate": 0.4}"""), Ending.Failed(Answer.NotAProbability))
+    assertEquals(ending("""Unsure. {"probability": 1.4}"""), Ending.Failed(Answer.NotAProbability))

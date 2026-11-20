@@ -1,6 +1,6 @@
 package forecastbench.gather
 
-import com.github.plokhotnyuk.jsoniter_scala.core.{JsonValueCodec, readFromString}
+import com.github.plokhotnyuk.jsoniter_scala.core.JsonValueCodec
 import com.thinkmorestupidless.ankka.agent.{ChatMessage, ModelRequest}
 import com.thinkmorestupidless.ankka.core.Codecs
 import forecastbench.application.{Instruction, Limits, Models}
@@ -34,10 +34,8 @@ object Gatherer:
   val Timeout: FiniteDuration = 2.minutes
 
   def readQueries(reply: String): Option[List[String]] =
-    val text = reply.trim.stripPrefix("```json").stripPrefix("```").stripSuffix("```").trim
-    scala.util
-      .Try(readFromString[Queries](text))
-      .toOption
+    forecastbench.domain.Reply
+      .read[Queries](reply)
       .map(_.queries.map(_.trim).filter(_.nonEmpty))
       .filter(_.nonEmpty)
 
